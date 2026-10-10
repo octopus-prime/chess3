@@ -60,17 +60,19 @@ constexpr void position_t::do_move(const move_t move) noexcept {
         assert(_checkers.empty());
     }
 
-    _stack.push(state_t{_checkers, _snipers, _pinned, _special, captured, captured_square});
+    _stack.push(state_t{_checkers, _snipers, _pinned, _special, _hash, captured, captured_square});
 
     const squares_t source{from};
     const squares_t target{to};
     if (captured != NO_PIECE) {
+        _hash ^= hashes::lookup::piece(captured, captured_square);
         _piece_at_square[captured_square] = NO_PIECE;
         _occupied_by_type[captured.type()].reset(captured_square);
         _occupied_by_side[captured.side()].reset(captured_square);
     }
 
     const piece_t placed = promotion == NO_TYPE ? piece : piece_t{_side, promotion};
+    _hash ^= hashes::lookup::piece(piece, from) ^ hashes::lookup::piece(placed, to);
     _piece_at_square[from] = NO_PIECE;
     _piece_at_square[to] = placed;
     _occupied_by_type[piece.type()] &= ~source;
@@ -81,6 +83,8 @@ constexpr void position_t::do_move(const move_t move) noexcept {
     if (castle) {
         const square_t rook_from{to.file() == g ? h : a, from.rank()};
         const square_t rook_to{to.file() == g ? f : d, from.rank()};
+        const piece_t rook{_side, R};
+        _hash ^= hashes::lookup::piece(rook, rook_from) ^ hashes::lookup::piece(rook, rook_to);
         _piece_at_square[rook_from] = NO_PIECE;
         _piece_at_square[rook_to] = piece_t{_side, R};
         _occupied_by_type[R].reset(rook_from);
@@ -102,6 +106,12 @@ constexpr void position_t::do_move(const move_t move) noexcept {
         _special.reset(squares_t{square_t{a, rank}, square_t{h, rank}});
     }
 
+    for (const square_t square : _stack.top().special ^ _special) {
+        _hash ^= square.rank() == _1 || square.rank() == _8
+            ? hashes::lookup::castle(square)
+            : hashes::lookup::ep(square.file());
+    }
+    _hash ^= hashes::lookup::side();
     _side = ~_side;
     _checkers = attackers(by(_side, K).front()) & by(~_side);
     std::tie(_snipers, _pinned) = find_snipers_and_blockers(_side);
@@ -163,6 +173,7 @@ constexpr void position_t::undo_move(const move_t move) noexcept {
     _snipers = state.snipers;
     _pinned = state.pinned;
     _special = state.special;
+    _hash = state.hash;
     _stack.pop();
 }
 

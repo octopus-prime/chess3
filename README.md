@@ -102,6 +102,18 @@ are saved in a fixed-capacity stack and restored during undo. Both methods are
 `constexpr`; [position_tests.cpp](tests/position_tests.cpp) checks cached state and round trips
 at compile time and runtime, including promotion captures and nested undo.
 
+`position_t::hash()` returns a cached 64-bit Zobrist key using the
+`hashes.hash` lookup tables. FEN construction hashes occupied piece squares,
+the side key for Black, each castling-right rook square, and the file of any
+stored en-passant target. Empty squares, move counters, and derived attack/pin
+caches are not hashed. An uncapturable en-passant target still contributes:
+this is a position-state key, not a canonical FIDE repetition key.
+Move execution updates the key incrementally, including captures, promotions,
+castling rook moves, and changed special squares. Undo restores the saved key.
+Tests independently recompute keys in compile-time lifecycle checks and after
+every move/undo in depth-three trees covering starting position, Kiwipete,
+en passant, and promotions.
+
 Castling uses the king's move (`e1/e8` to `g1/g8` or `c1/c8`); execution also moves
 the rook from `h1/h8` to `f1/f8`, or `a1/a8` to `d1/d8`. King moves remove both
 castling rights for that side. Moving from or capturing on a rook's starting

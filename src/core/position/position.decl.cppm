@@ -13,6 +13,7 @@ import types.piece;
 import types.side;
 import types.squares;
 import core.move;
+export import hashes.hash;
 
 export namespace chess {
 
@@ -22,6 +23,7 @@ struct position_t final {
     squares_t snipers;
     squares_t pinned;
     squares_t special;
+    hash_t hash;
     piece_t captured;
     square_t captured_square;
   };
@@ -46,6 +48,7 @@ struct position_t final {
   constexpr squares_t by(const type_t type1, const type_t type2) const noexcept;
   constexpr squares_t by(const side_t side, const type_t type1, const type_t type2) const noexcept;
   constexpr side_t side() const noexcept;
+  constexpr hash_t hash() const noexcept;
   constexpr squares_t pinned() const noexcept;
   constexpr squares_t snipers() const noexcept;
   constexpr squares_t checkers() const noexcept;
@@ -72,6 +75,7 @@ private:
   squares_t _pinned;
   squares_t _special; // castle and ep
   side_t _side;
+  hash_t _hash;
   stack_t _stack;
 };
 

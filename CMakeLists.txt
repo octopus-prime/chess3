@@ -15,6 +15,12 @@ file(GLOB_RECURSE chess_sources CONFIGURE_DEPENDS
 
 list(REMOVE_ITEM chess_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
 
+# add_compile_options(-fprofile-generate)
+# add_link_options(-fprofile-generate)
+
+add_compile_options(-fprofile-use=foo)
+add_link_options(-fprofile-use=foo)
+
 add_library(chess_core STATIC)
 target_compile_features(chess_core PUBLIC cxx_std_23)
 target_compile_options(chess_core PUBLIC -march=native -fconstexpr-steps=500000000)

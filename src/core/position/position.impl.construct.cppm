@@ -44,6 +44,7 @@ constexpr position_t::position_t(const std::string_view fen) noexcept :
     _pinned{},
     _special{},
     _side{},
+    _hash{},
     _stack{} {
 
     auto fen_parts = fen | std::views::split(' ');
@@ -58,6 +59,7 @@ constexpr position_t::position_t(const std::string_view fen) noexcept :
             } else {
                 const square_t square{file_e(file_index++), rank_e(7 - rank_index)};
                 const piece_t piece{piece_lookup(ch)};
+                _hash ^= hashes::lookup::piece(piece, square);
                 _piece_at_square[square] = piece;
                 _occupied_by_type[piece.type()].set(squares_t{square});
                 _occupied_by_side[piece.side()].set(squares_t{square});
@@ -81,6 +83,13 @@ constexpr position_t::position_t(const std::string_view fen) noexcept :
     std::string_view en_passant_part {*fen_part++};
     if (en_passant_part[0] != '-')
         _special.set(square_t{file_e(en_passant_part[0] - 'a'), rank_e(en_passant_part[1] - '1')});
+
+    if (_side == BLACK)
+        _hash ^= hashes::lookup::side();
+    for (const square_t square : castling())
+        _hash ^= hashes::lookup::castle(square);
+    for (const square_t square : en_passant())
+        _hash ^= hashes::lookup::ep(square.file());
 
     _checkers = attackers(by(_side, K).front()) & by(~_side);
     std::tie(_snipers, _pinned) = find_snipers_and_blockers(_side);

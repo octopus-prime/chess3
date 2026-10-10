@@ -24,6 +24,8 @@ bool test_en_passant_generation();
 bool test_pinned_pawn_generation();
 bool test_promotion_generation();
 bool test_king_slider_evasions();
+constexpr bool test_position_hash();
+bool test_hash_tree();
 
 bool run_position_tests() {
     bool passed = test_support::check(test_pinned_state(), "pinned state lifecycle");
@@ -34,6 +36,8 @@ bool run_position_tests() {
     passed &= test_support::check(test_pinned_pawn_generation(), "pinned-pawn generation");
     passed &= test_support::check(test_promotion_generation(), "SIMD promotion generation");
     passed &= test_support::check(test_king_slider_evasions(), "king slider evasions");
+    passed &= test_support::check(test_position_hash(), "position hash identity");
+    passed &= test_support::check(test_hash_tree(), "incremental hash tree");
     using namespace chess;
 
     constexpr piece_t piece{WHITE, K};
@@ -298,7 +302,24 @@ constexpr bool test_checkers_and_pinned() {
 
 static_assert(test_checkers_and_pinned());
 
+constexpr hash_t recompute_hash(const position_t& position) {
+    hash_t hash{};
+    for (square_t square = a1; square <= h8; ++square)
+        if (position.at(square) != NO_PIECE)
+            hash ^= hashes::lookup::piece(position.at(square), square);
+    if (position.side() == BLACK)
+        hash ^= hashes::lookup::side();
+    for (const square_t square : position.castling())
+        hash ^= hashes::lookup::castle(square);
+    for (const square_t square : position.en_passant())
+        hash ^= hashes::lookup::ep(square.file());
+    return hash;
+}
+
 constexpr bool same_position(const position_t& actual, const position_t& expected) {
+        if (actual.hash() != expected.hash() || actual.hash() != recompute_hash(actual) ||
+            expected.hash() != recompute_hash(expected))
+            return false;
         if (actual.side() != expected.side() || actual.by() != expected.by() ||
             actual.checkers() != expected.checkers() || actual.pinned() != expected.pinned() ||
             actual.snipers() != expected.snipers() || actual.castling() != expected.castling() ||
@@ -316,6 +337,87 @@ constexpr bool same_position(const position_t& actual, const position_t& expecte
             if (actual.at(square) != expected.at(square))
                 return false;
         return true;
+}
+
+constexpr bool test_position_hash() {
+    constexpr position_t initial{};
+    constexpr position_t black{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1"};
+    if (initial.hash() != recompute_hash(initial) ||
+        (initial.hash() ^ black.hash()) != hashes::lookup::side())
+        return false;
+    constexpr position_t clocks{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 42 99"};
+    if (initial.hash() != clocks.hash())
+        return false;
+    constexpr position_t no_rights{"r3k2r/8/8/8/8/8/8/R3K2R w - - 0 1"};
+    constexpr std::array rights{
+        "r3k2r/8/8/8/8/8/8/R3K2R w K - 0 1",
+        "r3k2r/8/8/8/8/8/8/R3K2R w Q - 0 1",
+        "r3k2r/8/8/8/8/8/8/R3K2R w k - 0 1",
+        "r3k2r/8/8/8/8/8/8/R3K2R w q - 0 1"
+    };
+    constexpr std::array<square_t, 4> rook_squares{h1, a1, h8, a8};
+    for (size_t index = 0; index < rights.size(); ++index) {
+        const position_t position{rights[index]};
+        if (position.hash() != recompute_hash(position) ||
+            (position.hash() ^ no_rights.hash()) != hashes::lookup::castle(rook_squares[index]))
+            return false;
+    }
+    constexpr position_t no_ep{"4k3/8/8/4p3/8/8/8/4K3 w - - 0 1"};
+    constexpr position_t ep{"4k3/8/8/4p3/8/8/8/4K3 w - e6 0 1"};
+    if ((ep.hash() ^ no_ep.hash()) != hashes::lookup::ep(e) ||
+        ep.hash() != recompute_hash(ep))
+        return false;
+
+    position_t first{};
+    position_t second{};
+    first.do_move({g1, f3});
+    first.do_move({g8, f6});
+    first.do_move({b1, c3});
+    first.do_move({b8, c6});
+    second.do_move({b1, c3});
+    second.do_move({b8, c6});
+    second.do_move({g1, f3});
+    second.do_move({g8, f6});
+    return same_position(first, second);
+}
+
+static_assert(test_position_hash());
+
+bool test_hash_tree() {
+    const auto visit = [](auto&& self, position_t& position, int depth) -> bool {
+        if (position.hash() != recompute_hash(position))
+            return false;
+        if (depth == 0)
+            return true;
+        const hash_t before = position.hash();
+        std::array<move_t, 256> buffer;
+        const auto moves = position.generate_all_moves(buffer);
+        bool passed = true;
+        for (const move_t move : moves) {
+            position.do_move(move);
+            passed &= self(self, position, depth - 1);
+            position.undo_move(move);
+            passed &= position.hash() == before && position.hash() == recompute_hash(position);
+        }
+        return passed;
+    };
+    constexpr std::array positions{
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+        "4k3/8/8/2PpP3/8/8/8/4K3 w - d6 0 1",
+        "4k3/8/8/8/2pPp3/8/8/4K3 b - d3 0 1",
+        "k2r1r2/4P3/8/8/8/8/8/7K w - - 0 1",
+        "7k/8/8/8/8/8/4p3/K2R1R2 b - - 0 1"
+    };
+    bool passed = true;
+    for (const auto fen : positions) {
+        position_t position{fen};
+        const bool matches = visit(visit, position, 3);
+        if (!matches)
+            std::cerr << "Incremental hash mismatch: " << fen << '\n';
+        passed &= test_support::check(matches, "hash matches recomputation after every move and undo");
+    }
+    return passed;
 }
 
 constexpr bool test_castling_moves() {

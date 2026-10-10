@@ -46,6 +46,10 @@ constexpr side_t position_t::side() const noexcept {
     return _side;
 }
 
+constexpr hash_t position_t::hash() const noexcept {
+    return _hash;
+}
+
 constexpr squares_t position_t::pinned() const noexcept {
     return _pinned;
 }

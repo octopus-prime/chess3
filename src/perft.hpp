@@ -6,13 +6,16 @@
 #include <cstddef>
 #include <span>
 #include <string_view>
+#include "transposition.hpp"
 
 import types.side;
 import types.type;
 import types.square;
+import types.score;
 import core.move;
 import core.position;
 import attacks.generator;
+import hashes.hash;
 
 namespace chess {
 
@@ -42,35 +45,10 @@ private:
 };
 
 struct negamax_t {
-    enum score_e : int16_t {
-        MAX = 32000,
-        KING = 20000,
-        QUEEN = 900,
-        ROOK = 500,
-        BISHOP = 330,
-        KNIGHT = 320,
-        PAWN = 100,
-        DRAW = 0,
-        MIN = -32000
-    };
-
-    static constexpr std::array<score_e, MAX_TYPE> scores = {
-        DRAW,
-        PAWN,
-        KNIGHT,
-        BISHOP,
-        ROOK,
-        QUEEN,
-        KING,
-        DRAW
-    };
-
-    using score_t = int16_t;
-
-    explicit negamax_t(const std::string_view fen) noexcept : position(fen), nodes_searched{} {}
+    explicit negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), nodes_searched{} {}
 
     score_t operator()(size_t depth) noexcept {
-        return search(depth, MIN, MAX);
+        return search(depth, 0, MIN, MAX);
     }
 
     size_t nodes() const noexcept {
@@ -81,37 +59,80 @@ struct negamax_t {
         nodes_searched = 0;
     }
 
+    size_t full() const noexcept {
+        return transposition.full();
+    }
+
 private:
-    score_t search(size_t depth, score_t alpha, score_t beta) noexcept {
+    score_t search(size_t depth, size_t height, score_t alpha, score_t beta) noexcept {
         if (depth == 0)
-            return qsearch(alpha, beta);
+            return qsearch(height, alpha, beta);
 
         ++nodes_searched;
 
+        move_t best_move{};
+        if (const auto entry = transposition.get(position.hash())) {
+            best_move = entry->move;
+            if (entry->depth >= depth) {
+                switch (entry->flag) {
+                case EXACT:
+                    return entry->score;
+                case LOWER:
+                    if (entry->score > alpha)
+                        alpha = entry->score;
+                    break;
+                case UPPER:
+                    if (entry->score < beta)
+                        beta = entry->score;
+                    break;
+                default:
+                    break;
+                }
+                if (alpha >= beta)
+                    return beta;
+            }
+        }
+        const score_t original_alpha = alpha;
+
         std::array<move_t, 256> buffer;
         const std::span<move_t> moves = position.generate_all_moves(buffer);
+
+        if (moves.empty())
+            return position.checkers() ? score_e(MIN + height) : DRAW;
+
         const auto get_score = [&](const move_t& move) {
-            const score_t win = scores[position.at(move.to()).type()] + scores[move.promotion()];
-            const score_t loss = scores[position.at(move.from()).type()] / 100;
-            return win - loss;
+            const score_t best = score_t{KING} * (move == best_move);
+            const score_t win = score_t(position.at(move.to()).type()) + score_t(move.promotion());
+            const score_t loss = score_t(position.at(move.from()).type()) / 100;
+            return best + win - loss;
         };
         std::ranges::sort(moves, std::greater<>(), get_score);
 
         for (const move_t& move : moves) {
             position.do_move(move);
-            const score_t score = -search(depth - 1, -beta, -alpha);
+            const score_t score = -search(depth - 1, height + 1, -beta, -alpha);
             position.undo_move(move);
 
-            if (score >= beta)
+            if (score >= beta) {
+                transposition.put(position.hash(), move, beta, LOWER, depth);
                 return score;
-            if (score > alpha)
+            }
+            if (score > alpha) {
+                best_move = move;
                 alpha = score;
+            }
+        }
+
+        if (alpha > original_alpha) {
+            transposition.put(position.hash(), best_move, alpha, EXACT, depth);
+        } else {
+            transposition.put(position.hash(), best_move, alpha, UPPER, depth);
         }
 
         return alpha;
     }
 
-    score_t qsearch(score_t alpha, score_t beta) noexcept {
+    score_t qsearch(size_t height, score_t alpha, score_t beta) noexcept {
         ++nodes_searched;
 
         const score_t stand_pat = evaluate();
@@ -124,15 +145,15 @@ private:
         std::array<move_t, 256> buffer;
         const std::span<move_t> moves = position.generate_capture_moves(buffer);
         const auto get_score = [&](const move_t& move) {
-            const score_t win = scores[position.at(move.to()).type()] + scores[move.promotion()];
-            const score_t loss = scores[position.at(move.from()).type()] / 100;
+            const score_t win = score_t(position.at(move.to()).type()) + score_t(move.promotion());
+            const score_t loss = score_t(position.at(move.from()).type()) / 100;
             return win - loss;
         };
         std::ranges::sort(moves, std::greater<>(), get_score);
 
         for (const move_t& move : moves) {
             position.do_move(move);
-            const score_t score = -qsearch(-beta, -alpha);
+            const score_t score = -qsearch(height + 1, -beta, -alpha);
             position.undo_move(move);
 
             if (score >= beta)
@@ -145,27 +166,28 @@ private:
     }
 
     position_t position;
+    transposition_t transposition;
     size_t nodes_searched = 0;
 
     score_t evaluate() const noexcept {
         using namespace attacks::generator;
         const side_t side = position.side();
-        score_t score = 0;
+        score_t score{};
         // score += KING * (position.by(side, K).empty() - position.by(~side, K).empty());
-        score += QUEEN * (position.by(side, Q).size() - position.by(~side, Q).size());
-        score += ROOK * (position.by(side, R).size() - position.by(~side, R).size());
-        score += BISHOP * (position.by(side, B).size() - position.by(~side, B).size());
-        score += KNIGHT * (position.by(side, N).size() - position.by(~side, N).size());
-        score += PAWN * (position.by(side, P).size() - position.by(~side, P).size());
+        score += score_t{QUEEN} * (int(position.by(side, Q).size()) - int(position.by(~side, Q).size()));
+        score += score_t{ROOK} * (int(position.by(side, R).size()) - int(position.by(~side, R).size()));
+        score += score_t{BISHOP} * (int(position.by(side, B).size()) - int(position.by(~side, B).size()));
+        score += score_t{KNIGHT} * (int(position.by(side, N).size()) - int(position.by(~side, N).size()));
+        score += score_t{PAWN} * (int(position.by(side, P).size()) - int(position.by(~side, P).size()));
 
-        score += leapers(position.by(side, K), position.by(side, N)).size();
-        score -= leapers(position.by(~side, K), position.by(~side, N)).size();
+        score += score_t{CP} * int(leapers(position.by(side, K), position.by(side, N)).size());
+        score -= score_t{CP} * int(leapers(position.by(~side, K), position.by(~side, N)).size());
 
-        score += sliders(position.by(side, R, Q), position.by(side, B, Q), position.by()).size();
-        score -= sliders(position.by(~side, R, Q), position.by(~side, B, Q), position.by()).size();
+        score += score_t{CP} * int(sliders(position.by(side, R, Q), position.by(side, B, Q), position.by()).size());
+        score -= score_t{CP} * int(sliders(position.by(~side, R, Q), position.by(~side, B, Q), position.by()).size());
 
-        score += pawns(position.by(side, P), side).size();
-        score -= pawns(position.by(~side, P), ~side).size();
+        score += score_t{CP} * int(pawns(position.by(side, P), side).size());
+        score -= score_t{CP} * int(pawns(position.by(~side, P), ~side).size());
 
         return score_t(score);
     }
