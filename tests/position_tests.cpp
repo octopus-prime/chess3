@@ -23,6 +23,7 @@ constexpr bool test_en_passant_moves();
 bool test_en_passant_generation();
 bool test_pinned_pawn_generation();
 bool test_promotion_generation();
+bool test_tactical_generation();
 bool test_king_slider_evasions();
 constexpr bool test_position_hash();
 bool test_hash_tree();
@@ -35,6 +36,7 @@ bool run_position_tests() {
     passed &= test_support::check(test_en_passant_generation(), "legal en-passant generation");
     passed &= test_support::check(test_pinned_pawn_generation(), "pinned-pawn generation");
     passed &= test_support::check(test_promotion_generation(), "SIMD promotion generation");
+    passed &= test_support::check(test_tactical_generation(), "captures and promotions generation");
     passed &= test_support::check(test_king_slider_evasions(), "king slider evasions");
     passed &= test_support::check(test_position_hash(), "position hash identity");
     passed &= test_support::check(test_hash_tree(), "incremental hash tree");
@@ -630,7 +632,7 @@ bool test_promotion_generation() {
         for (const bool filtered : {false, true}) {
             std::array<move_t, 256> buffer;
             const auto moves = filtered
-                ? position.generate_moves(~position.by(position.side()), buffer)
+                ? position.generate_tactical_moves(buffer)
                 : position.generate_all_moves(buffer);
             size_t count{};
             for (size_t index = 0; index < moves.size(); ++index) {
@@ -655,6 +657,63 @@ bool test_promotion_generation() {
             passed &= test_support::check(count == 4 * test.destinations.size(),
                                           "four moves per promotion destination");
         }
+    }
+    return passed;
+}
+
+bool test_tactical_generation() {
+    struct case_t {
+        std::string_view fen;
+        size_t expected;
+    };
+    constexpr std::array cases{
+        case_t{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 0},
+        case_t{"r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1", 2},
+        case_t{"r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1", 2},
+        case_t{"k7/4P3/8/8/8/8/8/7K w - - 0 1", 4},
+        case_t{"k2r1r2/4P3/8/8/8/8/8/7K w - - 0 1", 12},
+        case_t{"7k/8/8/8/8/8/4p3/K7 b - - 0 1", 4},
+        case_t{"7k/8/8/8/8/8/4p3/K2R1R2 b - - 0 1", 12},
+        case_t{"8/R3P2K/2Q2N2/8/8/8/8/1k6 w - - 0 1", 4},
+        case_t{"1K6/8/8/8/8/2q2n2/r3p2k/8 b - - 0 1", 4},
+        case_t{"k5b1/5P2/4K3/8/8/8/8/8 w - - 0 1", 4},
+        case_t{"8/8/8/8/8/4k3/5p2/K5B1 b - - 0 1", 4},
+        case_t{"k3r3/4P3/4K3/8/8/8/8/8 w - - 0 1", 0},
+        case_t{"8/8/8/8/8/4k3/4p3/K3R3 b - - 0 1", 0},
+        case_t{"r6K/4P3/8/8/8/8/8/k7 w - - 0 1", 4},
+        case_t{"K7/8/8/8/8/8/4p3/R6k b - - 0 1", 4},
+        case_t{"r6K/4P3/8/8/8/8/8/k6r w - - 0 1", 0},
+        case_t{"K6R/8/8/8/8/8/4p3/R6k b - - 0 1", 0},
+        case_t{"4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1", 1},
+        case_t{"4k3/8/8/8/3Pp3/8/8/4K3 b - d3 0 1", 1}
+    };
+    bool passed = true;
+    for (const auto& test : cases) {
+        const position_t position{test.fen};
+        std::array<move_t, 256> all_buffer;
+        std::array<move_t, 256> tactical_buffer;
+        const auto all = position.generate_all_moves(all_buffer);
+        const auto tactical = position.generate_tactical_moves(tactical_buffer);
+        const auto is_capture = [&](const move_t move) {
+            return position.by(~position.side())[move.to()] ||
+                (position.at(move.from()).type() == P && position.en_passant()[move.to()]);
+        };
+        if (tactical.size() != test.expected)
+            std::cerr << "Tactical position " << test.fen << ": expected "
+                      << test.expected << ", actual " << tactical.size() << '\n';
+        passed &= test_support::check(tactical.size() == test.expected,
+                                      "exact tactical move count");
+        size_t tactical_index{};
+        for (const move_t move : all) {
+            if (is_capture(move) || move.promotion() != NO_TYPE) {
+                passed &= test_support::check(
+                    tactical_index < tactical.size() && tactical[tactical_index] == move,
+                    "tactical moves preserve legal move order and all underpromotions");
+                ++tactical_index;
+            }
+        }
+        passed &= test_support::check(tactical_index == tactical.size(),
+                                      "no extra quiet moves or castling in tactical generation");
     }
     return passed;
 }

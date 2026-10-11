@@ -158,6 +158,14 @@ It emits four 16-bit moves in queen, rook, bishop, knight order using one 8-byte
 SIMD store, with source square `to + offset`. The buffer must have at least four
 remaining entries and the source index must be in `0..63`.
 
+`generate_capture_moves` returns only legal captures, including en passant and
+capture promotions. `generate_tactical_moves` additionally includes quiet
+promotions to all four pieces, without other quiet moves or castling. It uses
+a separate pawn destination mask so adding the promotion rank cannot admit
+quiet moves by other pieces. Both masks respect check-evasion and pin restrictions.
+The `negamax_t` quiescence search uses tactical moves outside check. In check,
+it skips stand pat, searches all legal evasions, and scores checkmate if none exist.
+
 ## Tests
 
 Tests use CTest without an external test framework. Compile-time assertions
@@ -168,12 +176,15 @@ and source location and return a nonzero exit status.
 - `chess.position`: type/encoding assertions, FEN queries, sniper/blocker
   assertions, pinned/checker lifecycle tests, all four castling moves, castling
   rights updates, nested castling undo, en-passant execution/generation,
-  king-safety edge cases, and en-passant target lifetime/restoration.
+  king-safety edge cases, en-passant target lifetime/restoration, and exact
+  capture/tactical move sets and order for both colors, including promotions,
+  pins, checks, and castling exclusion.
 - `chess.perft`: initial-position reference counts at depths zero through six
   (`1`, `20`, `400`, `8902`, `197281`, `4865609`, `119060324`),
   Kiwipete at depths zero through five
   (`1`, `48`, `2039`, `97862`, `4085603`, `193690690`), focused en-passant positions for both colors
-  at depths zero through two (`1`, `7`, `38`), and repeated-call restoration.
+  at depths zero through two (`1`, `7`, `38`), repeated-call restoration, and
+  quiescence quiet promotions, checkmate, and quiet check evasions.
 
 CTest is available through VS Code's CMake Tools test integration. To run a suite
 directly, use `./build/chess_tests lookup`, `./build/chess_tests position`, or

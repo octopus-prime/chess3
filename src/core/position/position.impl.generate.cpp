@@ -79,14 +79,18 @@ size_t splat_promotions(const int16_t offset, const square_t to, const std::span
 }
 
 std::span<move_t> position_t::generate_all_moves(const std::span<move_t, 256> buffer) const noexcept {
-    return generate_moves(~by(side()), buffer);
+    const squares_t all_targets = ~by(side());
+    return generate_moves(all_targets, all_targets, buffer);
 }
 
-std::span<move_t> position_t::generate_capture_moves(const std::span<move_t, 256> buffer) const noexcept {
-    return generate_moves(by(~side()) | en_passant(), buffer);
+std::span<move_t> position_t::generate_tactical_moves(const std::span<move_t, 256> buffer) const noexcept {
+    const squares_t captures = by(~side()) | en_passant();
+    const squares_t promotion_rank{side() == WHITE ? _8 : _1};
+    return generate_moves(captures, captures | promotion_rank, buffer);
 }
 
-std::span<move_t> position_t::generate_moves(const squares_t filter, const std::span<move_t, 256> buffer) const noexcept {
+std::span<move_t> position_t::generate_moves(const squares_t filter, const squares_t pawn_filter,
+                                           const std::span<move_t, 256> buffer) const noexcept {
     using namespace attacks::lookup;
 
     const side_t side = this->side();
@@ -98,6 +102,7 @@ std::span<move_t> position_t::generate_moves(const squares_t filter, const std::
     const squares_t attacked = attackers(~side);
 
     squares_t targets = filter;
+    squares_t pawn_targets = pawn_filter;
     size_t count{};
 
     count += splat_leapers(ksq, king(ksq) & targets & ~attacked, buffer.subspan(count));
@@ -105,9 +110,10 @@ std::span<move_t> position_t::generate_moves(const squares_t filter, const std::
     if (_checkers.size() > 1)
         return buffer.first(count);
 
-    if (_checkers.size() == 1)
+    if (_checkers.size() == 1) {
         targets &= line(ksq, _checkers.front());
-    else {
+        pawn_targets &= line(ksq, _checkers.front());
+    } else if (filter == ~us) {
         if (side == WHITE) {
             if ((castling() & squares_t{h1}) && !(by() & squares_t{f1, g1}) && !(attacked & squares_t{e1, f1, g1}))
                 buffer[count++] = {e1, g1};
@@ -149,10 +155,10 @@ std::span<move_t> position_t::generate_moves(const squares_t filter, const std::
     const squares_t pawns = by(side, P) & ~_pinned;
 
     if (side == WHITE) {
-        const squares_t push1 = (pawns << 8) & empty & targets;
-        const squares_t push2 = ((pawns & squares_t{_2}) << 8 & empty) << 8 & empty & targets;
-        const squares_t left  = (pawns << 7) & ~squares_t{h} & enemies & targets;
-        const squares_t right = (pawns << 9) & ~squares_t{a} & enemies & targets;
+        const squares_t push1 = (pawns << 8) & empty & pawn_targets;
+        const squares_t push2 = ((pawns & squares_t{_2}) << 8 & empty) << 8 & empty & pawn_targets;
+        const squares_t left  = (pawns << 7) & ~squares_t{h} & enemies & pawn_targets;
+        const squares_t right = (pawns << 9) & ~squares_t{a} & enemies & pawn_targets;
         count += splat_pawns(-7, left & ~squares_t{_8}, buffer.subspan(count));
         count += splat_pawns(-9, right & ~squares_t{_8}, buffer.subspan(count));
         count += splat_pawns(-8, push1 & ~squares_t{_8}, buffer.subspan(count));
@@ -169,7 +175,7 @@ std::span<move_t> position_t::generate_moves(const squares_t filter, const std::
 
         for (const square_t from : by(side, P) & _pinned) {
             const squares_t pawns{from};
-            const squares_t valid = find_valid(from, targets);
+            const squares_t valid = find_valid(from, pawn_targets);
             const squares_t push1 = (pawns << 8) & empty;
             const squares_t push2 = ((pawns & squares_t{_2}) << 8 & empty) << 8 & empty;
             const squares_t left  = (pawns << 7) & ~squares_t{h} & enemies;
@@ -181,12 +187,11 @@ std::span<move_t> position_t::generate_moves(const squares_t filter, const std::
             for (const square_t to : moves & squares_t{_8})
                 count += splat_promotions(from - to, to, buffer.subspan(count));
         }
-
     } else {
-        const squares_t push1 = (pawns >> 8) & empty & targets;
-        const squares_t push2 = ((pawns & squares_t{_7}) >> 8 & empty) >> 8 & empty & targets;
-        const squares_t left  = (pawns >> 9) & ~squares_t{h} & enemies & targets;
-        const squares_t right = (pawns >> 7) & ~squares_t{a} & enemies & targets;
+        const squares_t push1 = (pawns >> 8) & empty & pawn_targets;
+        const squares_t push2 = ((pawns & squares_t{_7}) >> 8 & empty) >> 8 & empty & pawn_targets;
+        const squares_t left  = (pawns >> 9) & ~squares_t{h} & enemies & pawn_targets;
+        const squares_t right = (pawns >> 7) & ~squares_t{a} & enemies & pawn_targets;
         count += splat_pawns(+9, left & ~squares_t{_1}, buffer.subspan(count));
         count += splat_pawns(+7, right & ~squares_t{_1}, buffer.subspan(count));
         count += splat_pawns(+8, push1 & ~squares_t{_1}, buffer.subspan(count));
@@ -203,7 +208,7 @@ std::span<move_t> position_t::generate_moves(const squares_t filter, const std::
 
         for (const square_t from : by(side, P) & _pinned) {
             const squares_t pawns{from};
-            const squares_t valid = find_valid(from, targets);
+            const squares_t valid = find_valid(from, pawn_targets);
             const squares_t push1 = (pawns >> 8) & empty;
             const squares_t push2 = ((pawns & squares_t{_7}) >> 8 & empty) >> 8 & empty;
             const squares_t left  = (pawns >> 9) & ~squares_t{h} & enemies;

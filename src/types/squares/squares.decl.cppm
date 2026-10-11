@@ -13,6 +13,8 @@ export import types.square;
 export namespace chess {
 
 enum squares_e : uint64_t {
+  NO_SQUARES = 0ull,
+  ALL_SQUARES = ~0ull
 };
 
 struct squares_t final {

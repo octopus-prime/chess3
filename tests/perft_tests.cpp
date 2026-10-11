@@ -6,9 +6,30 @@
 #include "test_support.hpp"
 
 bool run_perft_tests() {
+    bool passed = true;
+    for (const auto fen : {"k7/4P3/8/8/8/8/8/7K w - - 0 1",
+                          "7k/8/8/8/8/8/4p3/K7 b - - 0 1"}) {
+        chess::negamax_t search{fen};
+        const auto score = search(0);
+        passed &= test_support::check(score > chess::PAWN,
+                                      "quiescence searches quiet promotions");
+        passed &= test_support::check(search.nodes() > 1,
+                                      "quiescence expands promotion moves");
+        passed &= test_support::check(search(0) == score,
+                                      "quiescence restores the position");
+    }
+    chess::negamax_t mate{"k7/1Q6/2K5/8/8/8/8/8 b - - 0 1"};
+    passed &= test_support::check(mate(0) == chess::MIN,
+                                  "quiescence detects checkmate without stand pat");
+    chess::negamax_t evasion{"k3r3/8/8/8/8/8/8/4K3 w - - 0 1"};
+    const auto evasion_score = evasion(0);
+    passed &= test_support::check(evasion.nodes() > 1 && evasion_score > chess::LOSS,
+                                  "quiescence searches quiet check evasions");
+    passed &= test_support::check(evasion(0) == evasion_score,
+                                  "quiescence restores the position after evasions");
+
     chess::perft_t perft{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"};
     constexpr std::array expected{1, 20, 400, 8902, 197281, 4865609, 119060324};
-    bool passed = true;
     for (size_t depth = 0; depth < expected.size(); ++depth) {
         const size_t actual = perft(static_cast<int>(depth));
         if (actual != expected[depth])

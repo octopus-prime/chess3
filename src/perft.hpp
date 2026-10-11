@@ -152,15 +152,21 @@ private:
     score_t qsearch(size_t height, score_t alpha, score_t beta) noexcept {
         ++nodes_searched;
 
-        const score_t stand_pat = evaluate();
-
-        if (stand_pat >= beta)
-            return beta;
-        if (stand_pat > alpha)
-            alpha = stand_pat;
+        const bool in_check = !position.checkers().empty();
+        if (!in_check) {
+            const score_t stand_pat = evaluate();
+            if (stand_pat >= beta)
+                return beta;
+            if (stand_pat > alpha)
+                alpha = stand_pat;
+        }
 
         std::array<move_t, 256> buffer;
-        const std::span<move_t> moves = position.generate_capture_moves(buffer);
+        const std::span<move_t> moves = in_check
+            ? position.generate_all_moves(buffer)
+            : position.generate_tactical_moves(buffer);
+        if (in_check && moves.empty())
+            return score_e(MIN + height);
         const auto get_score = [&](const move_t& move) {
             const score_t win = score_t(position.at(move.to()).type()) + score_t(move.promotion());
             const score_t loss = score_t(position.at(move.from()).type()) / 100;
