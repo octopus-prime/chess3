@@ -177,6 +177,15 @@ losing scores do the reverse. This preserves mate distance when the same positio
 is reached at different search heights. Exact scores and both bound types use
 the same conversion; ordinary evaluations and ignore sentinels are unchanged.
 
+Main-search move ordering uses four lazy spans flattened with C++23 `views::join`:
+the legal TT move, remaining moves scoring above zero sorted descending,
+both killers in one phase in priority order, and the rest sorted descending. Each phase
+only processes the unconsumed suffix. A cutoff skips later phases. Missing or
+already-consumed TT/killer moves are ignored; every legal move is visited once.
+The positive-score threshold is an ordering policy, not a tactical-move predicate:
+en passant scoring -1 stays in the final phase unless
+selected earlier as the TT move or a killer.
+
 ## Tests
 
 Tests use CTest without an external test framework. Compile-time assertions

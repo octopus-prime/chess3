@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <span>
+#include <ranges>
 #include <string_view>
 #include "transposition.hpp"
 #include "killer.hpp"
@@ -19,6 +20,52 @@ import attacks.generator;
 import hashes.hash;
 
 namespace chess {
+
+namespace detail {
+
+template <typename Projection>
+auto ordered_moves(const std::span<move_t> moves, const move_t best_move, const std::span<const move_t, 2> killer_moves, Projection get_score) noexcept {
+    const auto create = [moves, best_move, killer_moves, get_score, count = size_t{}](const int phase) mutable -> std::span<move_t> {
+        const auto remaining = moves.subspan(count);
+        switch (phase) {
+            case 0: {
+                const auto best = std::ranges::find(remaining, best_move);
+                count += best != remaining.end();
+                if (best != remaining.end())
+                    std::iter_swap(remaining.begin(), best);
+                return remaining.first(count);
+            }
+            case 1: {
+                const auto tail = std::ranges::partition(remaining, [&](const move_t move) { return get_score(move) > 0; });
+                const auto result = remaining.first(tail.begin() - remaining.begin());
+                count += result.size();
+                std::ranges::sort(result, std::greater<>(), get_score);
+                return result;
+            }
+            case 2: {
+                size_t found{};
+                for (const move_t killer_move : killer_moves) {
+                    const auto tail = remaining.subspan(found);
+                    const auto best = std::ranges::find(tail, killer_move);
+                    if (best != tail.end()) {
+                        std::iter_swap(tail.begin(), best);
+                        ++found;
+                    }
+                }
+                count += found;
+                return remaining.first(found);
+            }
+            default: {
+                std::ranges::sort(remaining, std::greater<>(), get_score);
+                count += remaining.size();
+                return remaining;
+            }
+        }
+    };
+    return std::views::iota(0, 4) | std::views::transform(create) | std::views::join;
+}
+
+} // namespace detail
 
 struct perft_t {
     explicit perft_t(const std::string_view fen) noexcept : position(fen) {}
@@ -114,17 +161,14 @@ private:
         if (moves.empty())
             return position.checkers() ? score_e(MIN + height) : DRAW;
 
-        const auto killers = killer.get(height);
         const auto get_score = [&](const move_t& move) {
-            const score_t best = score_t{KING} * (move == best_move);
             const score_t win = score_t(position.at(move.to()).type()) + score_t(move.promotion());
-            const score_t killer_score = (move == killers[0]) ? score_t{CP} * 75 : (move == killers[1]) ? score_t{CP} * 70 : score_t{DRAW};
             const score_t loss = score_t(position.at(move.from()).type()) / 100;
-            return best + win + killer_score - loss;
+            return win - loss;
         };
-        std::ranges::sort(moves, std::greater<>(), get_score);
+        auto ordered = detail::ordered_moves(moves, best_move, killer.get(height), get_score);
 
-        for (const move_t& move : moves) {
+        for (const move_t& move : ordered) {
             position.do_move(move);
             const score_t score = -search(depth - 1, height + 1, -beta, -alpha);
             position.undo_move(move);
