@@ -618,7 +618,9 @@ bool test_promotion_generation() {
         case_t{"7k/8/8/8/8/8/4p3/K7 b - - 0 1", e2, {e1}},
         case_t{"7k/8/8/8/8/8/4p3/K2R1R2 b - - 0 1", e2, {d1, e1, f1}},
         case_t{"k5b1/5P2/4K3/8/8/8/8/8 w - - 0 1", f7, {g8}},
-        case_t{"8/8/8/8/8/4k3/5p2/K5B1 b - - 0 1", f2, {g1}}
+        case_t{"8/8/8/8/8/4k3/5p2/K5B1 b - - 0 1", f2, {g1}},
+        case_t{"k3b3/5P2/6K1/8/8/8/8/8 w - - 0 1", f7, {e8}},
+        case_t{"8/8/8/8/8/6k1/5p2/K3B3 b - - 0 1", f2, {e1}}
     };
     constexpr std::array promotions{Q, R, B, N};
     bool passed = true;
@@ -678,7 +680,11 @@ bool test_pinned_pawn_generation() {
         case_t{"k3r3/8/8/8/8/5n2/4P3/4K3 w - - 0 1", e2, {}},
         case_t{"k7/8/8/8/8/5K2/6P1/7b w - - 0 1", g2, {}},
         case_t{"k5b1/5P2/4K3/8/8/8/8/8 w - - 0 1", f7, {g8}, true},
-        case_t{"8/8/8/8/8/4k3/5p2/K5B1 b - - 0 1", f2, {g1}, true}
+        case_t{"8/8/8/8/8/4k3/5p2/K5B1 b - - 0 1", f2, {g1}, true},
+        case_t{"k3b3/5P2/6K1/8/8/8/8/8 w - - 0 1", f7, {e8}, true},
+        case_t{"8/8/8/8/8/6k1/5p2/K3B3 b - - 0 1", f2, {e1}, true},
+        case_t{"k3r3/4P3/4K3/8/8/8/8/8 w - - 0 1", e7, {}},
+        case_t{"8/8/8/8/8/4k3/4p3/K3R3 b - - 0 1", e2, {}}
     };
     bool passed = true;
     for (const auto& test : cases) {
