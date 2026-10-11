@@ -7,6 +7,7 @@ module;
 #include <immintrin.h>
 #include <cstdint>
 #include <cstring>
+#include <tuple>
 
 // export module core.position:impl.move;
 module core.position;
@@ -127,12 +128,14 @@ std::span<move_t> position_t::generate_moves(const squares_t filter, const squar
         }
     }
 
-    for (const square_t from : by(side, N) & ~_pinned)
+    const auto [snipers, pinned] = find_snipers_and_blockers(side);
+
+    for (const square_t from : by(side, N) & ~pinned)
         count += splat_leapers(from, knight(from) & targets, buffer.subspan(count));
 
     const auto find_valid = [&](const square_t from, squares_t valid) {
-        if (_pinned[from]) {
-            for (const square_t sniper : _snipers) {
+        if (pinned[from]) {
+            for (const square_t sniper : snipers) {
                 const squares_t pin_line = line(ksq, sniper);
                 if (pin_line[from]) {
                     valid &= pin_line;
@@ -152,7 +155,7 @@ std::span<move_t> position_t::generate_moves(const squares_t filter, const squar
     for (const square_t from : by(side, Q))
         count += splat_queens(from, queen(from, occupied) & find_valid(from, targets), buffer.subspan(count));
 
-    const squares_t pawns = by(side, P) & ~_pinned;
+    const squares_t pawns = by(side, P) & ~pinned;
 
     if (side == WHITE) {
         const squares_t push1 = (pawns << 8) & empty & pawn_targets;
@@ -173,7 +176,7 @@ std::span<move_t> position_t::generate_moves(const squares_t filter, const squar
         for (const square_t to : push1 & squares_t{_8})
             count += splat_promotions(-8, to, buffer.subspan(count));
 
-        for (const square_t from : by(side, P) & _pinned) {
+        for (const square_t from : by(side, P) & pinned) {
             const squares_t pawns{from};
             const squares_t valid = find_valid(from, pawn_targets);
             const squares_t push1 = (pawns << 8) & empty;
@@ -206,7 +209,7 @@ std::span<move_t> position_t::generate_moves(const squares_t filter, const squar
         for (const square_t to : push1 & squares_t{_1})
             count += splat_promotions(+8, to, buffer.subspan(count));
 
-        for (const square_t from : by(side, P) & _pinned) {
+        for (const square_t from : by(side, P) & pinned) {
             const squares_t pawns{from};
             const squares_t valid = find_valid(from, pawn_targets);
             const squares_t push1 = (pawns >> 8) & empty;

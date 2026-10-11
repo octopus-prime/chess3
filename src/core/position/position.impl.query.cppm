@@ -50,14 +50,6 @@ constexpr hash_t position_t::hash() const noexcept {
     return _hash;
 }
 
-constexpr squares_t position_t::pinned() const noexcept {
-    return _pinned;
-}
-
-constexpr squares_t position_t::snipers() const noexcept {
-    return _snipers;
-}
-
 constexpr squares_t position_t::checkers() const noexcept {
     return _checkers;
 }

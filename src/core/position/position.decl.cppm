@@ -20,8 +20,6 @@ export namespace chess {
 struct position_t final {
   struct state_t final {
     squares_t checkers;
-    squares_t snipers;
-    squares_t pinned;
     squares_t special;
     hash_t hash;
     piece_t captured;
@@ -49,8 +47,6 @@ struct position_t final {
   constexpr squares_t by(const side_t side, const type_t type1, const type_t type2) const noexcept;
   constexpr side_t side() const noexcept;
   constexpr hash_t hash() const noexcept;
-  constexpr squares_t pinned() const noexcept;
-  constexpr squares_t snipers() const noexcept;
   constexpr squares_t checkers() const noexcept;
   constexpr squares_t en_passant() const noexcept;
   constexpr squares_t castling() const noexcept;
@@ -72,8 +68,6 @@ private:
   std::array<squares_t, MAX_TYPE> _occupied_by_type;
   std::array<squares_t, MAX_SIDE> _occupied_by_side;
   squares_t _checkers;
-  squares_t _snipers;
-  squares_t _pinned;
   squares_t _special; // castle and ep
   side_t _side;
   hash_t _hash;

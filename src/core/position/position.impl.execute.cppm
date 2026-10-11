@@ -1,7 +1,6 @@
 module;
 
 #include <cassert>
-#include <tuple>
 
 export module core.position:impl.execute;
 
@@ -60,7 +59,7 @@ constexpr void position_t::do_move(const move_t move) noexcept {
         assert(_checkers.empty());
     }
 
-    _stack.push(state_t{_checkers, _snipers, _pinned, _special, _hash, captured, captured_square});
+    _stack.push(state_t{_checkers, _special, _hash, captured, captured_square});
 
     const squares_t source{from};
     const squares_t target{to};
@@ -114,7 +113,6 @@ constexpr void position_t::do_move(const move_t move) noexcept {
     _hash ^= hashes::lookup::side();
     _side = ~_side;
     _checkers = attackers(by(_side, K).front()) & by(~_side);
-    std::tie(_snipers, _pinned) = find_snipers_and_blockers(_side);
 }
 
 constexpr void position_t::undo_move(const move_t move) noexcept {
@@ -170,8 +168,6 @@ constexpr void position_t::undo_move(const move_t move) noexcept {
 
     _side = side;
     _checkers = state.checkers;
-    _snipers = state.snipers;
-    _pinned = state.pinned;
     _special = state.special;
     _hash = state.hash;
     _stack.pop();

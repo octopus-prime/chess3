@@ -16,7 +16,7 @@ import core.position;
 
 using namespace chess;
 
-constexpr bool test_pinned_state();
+constexpr bool test_pin_detection_after_moves();
 constexpr bool test_checkers_and_pinned();
 constexpr bool test_castling_moves();
 constexpr bool test_en_passant_moves();
@@ -29,7 +29,7 @@ constexpr bool test_position_hash();
 bool test_hash_tree();
 
 bool run_position_tests() {
-    bool passed = test_support::check(test_pinned_state(), "pinned state lifecycle");
+    bool passed = test_support::check(test_pin_detection_after_moves(), "pin detection after move and undo");
     passed &= test_support::check(test_checkers_and_pinned(), "checkers and pinned lifecycle");
     passed &= test_support::check(test_castling_moves(), "castling execution and rights lifecycle");
     passed &= test_support::check(test_en_passant_moves(), "en-passant execution and target lifecycle");
@@ -70,6 +70,7 @@ bool run_position_tests() {
     constexpr position_t position{};
     static_assert(sizeof(position_t::stack_t) ==
                   1024 * sizeof(position_t::state_t) + sizeof(size_t));
+    static_assert(sizeof(position_t::state_t) == 32);
     static_assert(position.by() == squares_t{_1, _2, _7, _8});
     static_assert(position.by(WHITE) == squares_t{_1, _2});
     static_assert(position.by(BLACK) == squares_t{_7, _8});
@@ -169,57 +170,56 @@ void test_sinpers_and_blockers() {
             if (position.find_snipers_and_blockers(test.side) !=
                 std::make_tuple(test.snipers, test.blockers))
                 return false;
-            if (position.snipers() !=
-                std::get<0>(position.find_snipers_and_blockers(position.side())))
-                return false;
-            if (position.pinned() !=
-                std::get<1>(position.find_snipers_and_blockers(position.side())))
-                return false;
         }
         return true;
     }());
 }
 
-constexpr bool test_pinned_state() {
-    if (!position_t{}.pinned().empty())
+constexpr bool test_pin_detection_after_moves() {
+    if (!std::get<1>(position_t{}.find_snipers_and_blockers(WHITE)).empty())
         return false;
     position_t position{"3R4/8/8/4n3/4k3/8/8/K7 w - - 0 1"};
     const move_t pin{d8, e8};
     const move_t king_move{e4, d4};
     position.do_move(pin);
-    if (position.side() != BLACK || position.pinned() != squares_t{e5})
+    if (position.side() != BLACK ||
+        std::get<1>(position.find_snipers_and_blockers(position.side())) != squares_t{e5})
         return false;
     position.do_move(king_move);
-    if (position.side() != WHITE || !position.pinned().empty())
+    if (position.side() != WHITE ||
+        !std::get<1>(position.find_snipers_and_blockers(position.side())).empty())
         return false;
     position.undo_move(king_move);
-    if (position.side() != BLACK || position.pinned() != squares_t{e5})
+    if (position.side() != BLACK ||
+        std::get<1>(position.find_snipers_and_blockers(position.side())) != squares_t{e5})
         return false;
     position.undo_move(pin);
-    if (position.side() != WHITE || !position.pinned().empty())
+    if (position.side() != WHITE ||
+        !std::get<1>(position.find_snipers_and_blockers(position.side())).empty())
         return false;
 
     position_t capture{"4r2k/8/8/8/8/8/4R3/4K3 w - - 0 1"};
-    if (capture.pinned() != squares_t{e2})
+    if (std::get<1>(capture.find_snipers_and_blockers(capture.side())) != squares_t{e2})
         return false;
     const move_t take{e2, e8};
     capture.do_move(take);
-    if (!capture.pinned().empty())
+    if (!std::get<1>(capture.find_snipers_and_blockers(capture.side())).empty())
         return false;
     capture.undo_move(take);
-    if (capture.pinned() != squares_t{e2})
+    if (std::get<1>(capture.find_snipers_and_blockers(capture.side())) != squares_t{e2})
         return false;
 
     position_t promotion{"8/4P3/8/4n3/4k3/8/8/K7 w - - 0 1"};
     const move_t promote{e7, e8, R};
     promotion.do_move(promote);
-    if (promotion.pinned() != squares_t{e5})
+    if (std::get<1>(promotion.find_snipers_and_blockers(promotion.side())) != squares_t{e5})
         return false;
     promotion.undo_move(promote);
-    return promotion.pinned().empty() && promotion.at(e7) == WP;
+    return std::get<1>(promotion.find_snipers_and_blockers(promotion.side())).empty() &&
+           promotion.at(e7) == WP;
 }
 
-static_assert(test_pinned_state());
+static_assert(test_pin_detection_after_moves());
 
 constexpr bool test_checkers_and_pinned() {
     struct fen_case_t {
@@ -246,7 +246,8 @@ constexpr bool test_checkers_and_pinned() {
     };
     for (const auto& test : fen_cases) {
         const position_t position{test.fen};
-        if (position.checkers() != test.checkers || position.pinned() != test.pinned)
+        if (position.checkers() != test.checkers ||
+            std::get<1>(position.find_snipers_and_blockers(position.side())) != test.pinned)
             return false;
     }
 
@@ -274,11 +275,14 @@ constexpr bool test_checkers_and_pinned() {
         position_t position{test.fen};
         const position_t before = position;
         position.do_move(test.move);
-        if (position.checkers() != test.checkers || position.pinned() != test.pinned ||
+        if (position.checkers() != test.checkers ||
+            std::get<1>(position.find_snipers_and_blockers(position.side())) != test.pinned ||
             position.side() != ~before.side())
             return false;
         position.undo_move(test.move);
-        if (position.checkers() != before.checkers() || position.pinned() != before.pinned() ||
+        if (position.checkers() != before.checkers() ||
+            position.find_snipers_and_blockers(position.side()) !=
+                before.find_snipers_and_blockers(before.side()) ||
             position.side() != before.side())
             return false;
         for (square_t square = a1; square <= h8; ++square)
@@ -292,13 +296,16 @@ constexpr bool test_checkers_and_pinned() {
     const move_t escape{e8, d8};
     position.do_move(check);
     position.do_move(escape);
-    if (!position.checkers().empty() || !position.pinned().empty())
+    if (!position.checkers().empty() ||
+        !std::get<1>(position.find_snipers_and_blockers(position.side())).empty())
         return false;
     position.undo_move(escape);
-    if (position.checkers() != squares_t{e1} || !position.pinned().empty())
+    if (position.checkers() != squares_t{e1} ||
+        !std::get<1>(position.find_snipers_and_blockers(position.side())).empty())
         return false;
     position.undo_move(check);
-    return position.checkers().empty() && position.pinned().empty() &&
+    return position.checkers().empty() &&
+           std::get<1>(position.find_snipers_and_blockers(position.side())).empty() &&
            position.side() == WHITE;
 }
 
@@ -323,8 +330,7 @@ constexpr bool same_position(const position_t& actual, const position_t& expecte
             expected.hash() != recompute_hash(expected))
             return false;
         if (actual.side() != expected.side() || actual.by() != expected.by() ||
-            actual.checkers() != expected.checkers() || actual.pinned() != expected.pinned() ||
-            actual.snipers() != expected.snipers() || actual.castling() != expected.castling() ||
+            actual.checkers() != expected.checkers() || actual.castling() != expected.castling() ||
             actual.en_passant() != expected.en_passant())
             return false;
         for (const side_t side : {WHITE, BLACK}) {
@@ -749,7 +755,9 @@ bool test_pinned_pawn_generation() {
     for (const auto& test : cases) {
         position_t position{test.fen};
         const position_t before = position;
-        passed &= test_support::check(position.pinned()[test.from], "test pawn is pinned");
+        passed &= test_support::check(
+            std::get<1>(position.find_snipers_and_blockers(position.side()))[test.from],
+            "test pawn is pinned");
         std::array<move_t, 256> buffer;
         const auto moves = position.generate_all_moves(buffer);
         size_t count{};

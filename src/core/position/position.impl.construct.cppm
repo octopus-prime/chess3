@@ -3,7 +3,6 @@ module;
 #include <cassert>
 #include <string_view>
 #include <ranges>
-#include <tuple>
 
 export module core.position:impl.construct;
 
@@ -40,8 +39,6 @@ constexpr position_t::position_t(const std::string_view fen) noexcept :
     _occupied_by_type{},
     _occupied_by_side{},
     _checkers{},
-    _snipers{},
-    _pinned{},
     _special{},
     _side{},
     _hash{},
@@ -92,7 +89,6 @@ constexpr position_t::position_t(const std::string_view fen) noexcept :
         _hash ^= hashes::lookup::ep(square.file());
 
     _checkers = attackers(by(_side, K).front()) & by(~_side);
-    std::tie(_snipers, _pinned) = find_snipers_and_blockers(_side);
 }
 
 constexpr position_t::stack_t::stack_t() noexcept : _data{}, _size{} {}

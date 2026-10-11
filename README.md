@@ -80,16 +80,15 @@ performed. `front()` and `back()` also require a non-empty set.
 
 ## Move execution
 
-`position_t::pinned()` exposes the cached friendly pieces pinned to the
-king of the current side to move. FEN setup initializes it using the blocker
-result of `find_snipers_and_blockers`; `do_move` recomputes it after switching
-sides. Each undo state saves the previous cache so `undo_move` restores it without
-rescanning. It is not a cache for both colors and does not by itself handle check
-evasions or king-move legality.
+Snipers and pinned pieces are derived locally by `find_snipers_and_blockers`
+once per move-generation call, after the double-check early return. They are
+not stored in the position or undo stack, and there are no `snipers()` or
+`pinned()` getters. FEN setup and move execution do not calculate them, avoiding
+pin scans at search nodes that return before generating moves.
 
 `position_t::checkers()` returns the cached enemy pieces attacking the current
-side-to-move's king. FEN setup and move execution initialize/recompute both
-caches; undo restores both from the saved state. Compile-time and runtime tests
+side-to-move's king. FEN setup and move execution initialize/recompute this
+cache; undo restores it from the saved state. Compile-time and runtime tests
 cover both colors, slider/knight/pawn checks, double and discovered checks,
 blocked attacks, simultaneous checks and pins, captures, promotions, and nested
 undo.
@@ -180,7 +179,7 @@ and source location and return a nonzero exit status.
 
 - `chess.lookup`: attack generation/lookup assertions and all 512 ray entries.
 - `chess.position`: type/encoding assertions, FEN queries, sniper/blocker
-  assertions, pinned/checker lifecycle tests, all four castling moves, castling
+  assertions, pin detection after move/undo and checker lifecycle tests, all four castling moves, castling
   rights updates, nested castling undo, en-passant execution/generation,
   king-safety edge cases, en-passant target lifetime/restoration, and exact
   capture/tactical move sets and order for both colors, including promotions,
