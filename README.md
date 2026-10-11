@@ -166,6 +166,12 @@ quiet moves by other pieces. Both masks respect check-evasion and pin restrictio
 The `negamax_t` quiescence search uses tactical moves outside check. In check,
 it skips stand pat, searches all legal evasions, and scores checkmate if none exist.
 
+The transposition table stores mate scores relative to the stored position:
+winning scores add the current ply on storage and subtract the probe ply on lookup;
+losing scores do the reverse. This preserves mate distance when the same position
+is reached at different search heights. Exact scores and both bound types use
+the same conversion; ordinary evaluations and ignore sentinels are unchanged.
+
 ## Tests
 
 Tests use CTest without an external test framework. Compile-time assertions
@@ -184,7 +190,8 @@ and source location and return a nonzero exit status.
   Kiwipete at depths zero through five
   (`1`, `48`, `2039`, `97862`, `4085603`, `193690690`), focused en-passant positions for both colors
   at depths zero through two (`1`, `7`, `38`), repeated-call restoration, and
-  quiescence quiet promotions, checkmate, and quiet check evasions.
+  quiescence quiet promotions, checkmate, quiet check evasions, and TT mate-score
+  conversion across search heights for exact, lower-bound, and upper-bound entries.
 
 CTest is available through VS Code's CMake Tools test integration. To run a suite
 directly, use `./build/chess_tests lookup`, `./build/chess_tests position`, or

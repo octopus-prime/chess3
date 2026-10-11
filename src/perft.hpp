@@ -66,7 +66,7 @@ struct negamax_t {
     std::span<move_t> extract_pv(const std::span<move_t, 256> buffer, size_t max_length) noexcept {
         size_t length = 0;
         while (length < max_length) {
-            const auto entry = transposition.get(position.hash());
+            const auto entry = transposition.get(position.hash(), length);
             if (!entry || entry->move == move_t{})
                 break;
 
@@ -88,7 +88,7 @@ private:
         ++nodes_searched;
 
         move_t best_move{};
-        if (const auto entry = transposition.get(position.hash())) {
+        if (const auto entry = transposition.get(position.hash(), height)) {
             best_move = entry->move;
             if (entry->depth >= depth) {
                 switch (entry->flag) {
@@ -131,7 +131,7 @@ private:
             position.undo_move(move);
 
             if (score >= beta) {
-                transposition.put(position.hash(), move, beta, LOWER, depth);
+                transposition.put(position.hash(), move, beta, LOWER, depth, height);
                 return beta;
             }
             if (score > alpha) {
@@ -141,9 +141,9 @@ private:
         }
 
         if (alpha > original_alpha) {
-            transposition.put(position.hash(), best_move, alpha, EXACT, depth);
+            transposition.put(position.hash(), best_move, alpha, EXACT, depth, height);
         } else {
-            transposition.put(position.hash(), best_move, alpha, UPPER, depth);
+            transposition.put(position.hash(), best_move, alpha, UPPER, depth, height);
         }
 
         return alpha;

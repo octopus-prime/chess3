@@ -15,16 +15,22 @@ import types.score;
 
 namespace chess {
 
-// using score_t = int16_t;
+constexpr score_t score_to_tt(const score_t score, const size_t height) noexcept {
+    if (score.ignore())
+        return score;
+    // Store mate distance relative to this position, not the search root.
+    const int ply = static_cast<int>(height);
+    return score.win() ? score_t(score_e(score + ply))
+        : score.loss() ? score_t(score_e(score - ply)) : score;
+}
 
-
-// constexpr score_t score_to_tt(const score_t score, const depth_t height) noexcept {
-// 	return score.is_win() ? score_t(score_e(score + height)) : score.is_loss() ? score_t(score_e(score - height)) : score;
-// }
-
-// constexpr score_t score_from_tt(const score_t score, const depth_t height) noexcept {
-// 	return score.is_win() ? score_t(score_e(score - height)) : score.is_loss() ? score_t(score_e(score + height)) : score;
-// }
+constexpr score_t score_from_tt(const score_t score, const size_t height) noexcept {
+    if (score.ignore())
+        return score;
+    const int ply = static_cast<int>(height);
+    return score.win() ? score_t(score_e(score - ply))
+        : score.loss() ? score_t(score_e(score + ply)) : score;
+}
 
 enum flag_e : std::uint8_t {
 	UNKNOWN,
@@ -87,7 +93,8 @@ public:
 		used = 0;
     }
 
-    void put(const hash_t hash, const move_t move, const score_t score, const flag_e flag, const uint8_t depth) noexcept {
+    void put(const hash_t hash, const move_t move, const score_t score, const flag_e flag,
+             const uint8_t depth, const size_t height) noexcept {
 		const entry_t::key_t key = {uint16_t(hash >> 43), uint16_t(hash >> 23)};
         bucket_t& bucket = buckets[hash % buckets.size()];
 		entry_t* entry = std::ranges::find(bucket.entries, key, &entry_t::key);
@@ -95,16 +102,18 @@ public:
 			entry = std::ranges::min_element(bucket.entries, {}, &entry_t::depth);
 		}
 		used += entry->flag == UNKNOWN;
-		*entry = {key, move, score, flag, depth};
+		*entry = {key, move, score_to_tt(score, height), flag, depth};
     }
 
-    std::optional<entry_t> get(const hash_t hash) const noexcept {
+    std::optional<entry_t> get(const hash_t hash, const size_t height) const noexcept {
 		const entry_t::key_t key = {uint16_t(hash >> 43), uint16_t(hash >> 23)};
         const bucket_t& bucket = buckets[hash % buckets.size()];
 		const entry_t* entry = std::ranges::find(bucket.entries, key, &entry_t::key);
 		if (entry == std::end(bucket.entries) || entry->flag == UNKNOWN)
 			return std::nullopt;
-		return *entry;
+        entry_t result = *entry;
+        result.score = score_from_tt(result.score, height);
+        return result;
     }
 
     size_t full() const noexcept {
