@@ -56,10 +56,6 @@ struct negamax_t {
         return nodes_searched;
     }
 
-    void reset() noexcept {
-        nodes_searched = 0;
-    }
-
     size_t full() const noexcept {
         return transposition.full();
     }

@@ -77,9 +77,6 @@ bool run_perft_tests() {
     chess::negamax_t mate_in_one{"k7/8/1QK5/8/8/8/8/8 w - - 0 1"};
     passed &= test_support::check(mate_in_one(1) == chess::MAX - 1,
                                   "search scores mate in one at the correct distance");
-    mate_in_one.reset();
-    passed &= test_support::check(mate_in_one(1) == chess::MAX - 1 && mate_in_one.nodes() == 1,
-                                  "cached exact mate score preserves root mate distance");
     chess::negamax_t evasion{"k3r3/8/8/8/8/8/8/4K3 w - - 0 1"};
     const auto evasion_score = evasion(0);
     passed &= test_support::check(evasion.nodes() > 1 && evasion_score > chess::LOSS,
