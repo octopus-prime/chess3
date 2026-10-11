@@ -24,6 +24,7 @@ bool test_en_passant_generation();
 bool test_pinned_pawn_generation();
 bool test_promotion_generation();
 bool test_tactical_generation();
+constexpr bool test_tactical_query();
 bool test_king_slider_evasions();
 constexpr bool test_position_hash();
 bool test_hash_tree();
@@ -37,6 +38,7 @@ bool run_position_tests() {
     passed &= test_support::check(test_pinned_pawn_generation(), "pinned-pawn generation");
     passed &= test_support::check(test_promotion_generation(), "SIMD promotion generation");
     passed &= test_support::check(test_tactical_generation(), "captures and promotions generation");
+    passed &= test_support::check(test_tactical_query(), "tactical move classification");
     passed &= test_support::check(test_king_slider_evasions(), "king slider evasions");
     passed &= test_support::check(test_position_hash(), "position hash identity");
     passed &= test_support::check(test_hash_tree(), "incremental hash tree");
@@ -667,6 +669,54 @@ bool test_promotion_generation() {
     return passed;
 }
 
+constexpr bool test_tactical_query() {
+    struct case_t {
+        std::string_view fen;
+        move_t move;
+        bool expected;
+    };
+    constexpr std::array cases{
+        case_t{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", {e2, e4}, false},
+        case_t{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1", {g8, f6}, false},
+        case_t{"r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1", {e1, g1}, false},
+        case_t{"r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1", {e8, c8}, false},
+        case_t{"r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1", {a1, a8}, true},
+        case_t{"r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1", {h8, h1}, true},
+        case_t{"4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1", {e5, d6}, true},
+        case_t{"4k3/8/8/8/3Pp3/8/8/4K3 b - d3 0 1", {e4, d3}, true},
+        case_t{"4k3/8/8/3pPN2/8/8/8/4K3 w - d6 0 1", {f5, d6}, false},
+        case_t{"4k3/8/8/8/3Ppn2/8/8/4K3 b - d3 0 1", {f4, d3}, false},
+        case_t{"4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1", {e5, e6}, false}
+    };
+    for (const auto& test : cases)
+        if (position_t{test.fen}.tactical(test.move) != test.expected)
+            return false;
+
+    constexpr position_t white{"k2r4/4P3/8/8/8/8/8/7K w - - 0 1"};
+    constexpr position_t black{"7k/8/8/8/8/8/4p3/K2R4 b - - 0 1"};
+    for (const type_t promotion : {Q, R, B, N})
+        if (!white.tactical({e7, e8, promotion}) ||
+            !white.tactical({e7, d8, promotion}) ||
+            !black.tactical({e2, e1, promotion}) ||
+            !black.tactical({e2, d1, promotion}))
+            return false;
+
+    position_t position{"4k3/3p4/8/4P3/8/8/8/4K3 b - - 0 1"};
+    const move_t double_push{d7, d5};
+    const move_t ep{e5, d6};
+    position.do_move(double_push);
+    if (!position.tactical(ep))
+        return false;
+    const move_t quiet{e1, f1};
+    position.do_move(quiet);
+    if (position.tactical(ep))
+        return false;
+    position.undo_move(quiet);
+    return position.tactical(ep);
+}
+
+static_assert(test_tactical_query());
+
 bool test_tactical_generation() {
     struct case_t {
         std::string_view fen;
@@ -691,7 +741,9 @@ bool test_tactical_generation() {
         case_t{"r6K/4P3/8/8/8/8/8/k6r w - - 0 1", 0},
         case_t{"K6R/8/8/8/8/8/4p3/R6k b - - 0 1", 0},
         case_t{"4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1", 1},
-        case_t{"4k3/8/8/8/3Pp3/8/8/4K3 b - d3 0 1", 1}
+        case_t{"4k3/8/8/8/3Pp3/8/8/4K3 b - d3 0 1", 1},
+        case_t{"4k3/8/8/3pPN2/8/8/8/4K3 w - d6 0 1", 1},
+        case_t{"4k3/8/8/8/3Ppn2/8/8/4K3 b - d3 0 1", 1}
     };
     bool passed = true;
     for (const auto& test : cases) {
@@ -711,6 +763,9 @@ bool test_tactical_generation() {
                                       "exact tactical move count");
         size_t tactical_index{};
         for (const move_t move : all) {
+            passed &= test_support::check(
+                position.tactical(move) == (is_capture(move) || move.promotion() != NO_TYPE),
+                "tactical query agrees with independent legal move classification");
             if (is_capture(move) || move.promotion() != NO_TYPE) {
                 passed &= test_support::check(
                     tactical_index < tactical.size() && tactical[tactical_index] == move,

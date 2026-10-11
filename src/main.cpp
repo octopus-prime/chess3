@@ -16,33 +16,48 @@ void test_perft(std::string_view fen, size_t max_depth) {
     }
 }
 
+std::ostream& operator<<(std::ostream& os, const chess::square_t square) {
+    return os << char('a' + square.file()) << (char)('1' + square.rank());
+}
+
+std::ostream& operator<<(std::ostream& os, const chess::move_t move) {
+    return os << move.from() << move.to();
+}
+
 void test_negamax(std::string_view fen, size_t max_depth) {
     using namespace std::chrono;
     chess::negamax_t negamax{fen};
+    std::array<chess::move_t, 256> buffer;
+    const auto start = steady_clock::now();
     for (size_t depth = 1; depth <= max_depth; ++depth) {
-        const auto start = steady_clock::now();
         const auto score = negamax(depth);
         const auto end = steady_clock::now();
         const auto ns = duration_cast<nanoseconds>(end - start).count();
         const auto ms = duration_cast<milliseconds>(end - start).count();
-        std::array<chess::move_t, 256> buffer;
-        const auto pv = negamax.extract_pv(buffer, 10);
+        const auto pv = negamax.extract_pv(buffer, depth);
         std::cout << "depth: " << depth << ", score: " << score << ", time: " << ms << " ms, nodes: " << negamax.nodes() << " perf: " << negamax.nodes() * 1e3 / ns << " MN/s, full: " << negamax.full() << ", pv: ";
         for (const auto& move : pv)
-            std::cout << char('a' + move.from().file()) << (char)('1' + move.from().rank()) << char('a' + move.to().file()) << (char)('1' + move.to().rank()) << " ";
+            std::cout << move << " ";
         std::cout << "\n";
-        negamax.reset();
+        // negamax.reset();
     }
 }
 
 int main() {
-    constexpr std::string_view fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-    // constexpr std::string_view fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -";
-    // constexpr std::string_view fen = "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1";
-    // constexpr std::string_view fen = "4K3/1P1P1P1P/8/8/8/8/p1p1p1p1/4k3 w - -";
-    // constexpr std::string_view fen = "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1";
-    // constexpr std::string_view fen = "1k1r4/pp1b1R2/3q2pp/4p3/2B5/4Q3/PPP2B2/2K5 b - -";
+    constexpr std::array fens = {
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -",
+        "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+        "4K3/1P1P1P1P/8/8/8/8/p1p1p1p1/4k3 w - -",
+        "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
+        "1k1r4/pp1b1R2/3q2pp/4p3/2B5/4Q3/PPP2B2/2K5 b - -",
+        "r3k3/1pp1p1Kp/1p2P3/1p6/2N5/P2P2pr/5B1p/3Q1R2 w q -"
+    };
     constexpr size_t depth = 6;
-    test_perft(fen, depth);
-    test_negamax(fen, depth + 4);
+    for (const std::string_view fen : fens) {
+        std::cout << "FEN: " << fen << "\n";
+        test_perft(fen, depth);
+        test_negamax(fen, depth + 4);
+        std::cout << "\n";
+    }
 }

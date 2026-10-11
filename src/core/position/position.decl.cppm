@@ -52,6 +52,7 @@ struct position_t final {
   constexpr squares_t castling() const noexcept;
   constexpr squares_t attackers(const side_t side) const noexcept;
   constexpr squares_t attackers(const square_t square) const noexcept;
+  constexpr bool tactical(const move_t move) const noexcept;
 
   std::span<move_t> generate_all_moves(const std::span<move_t, 256> buffer) const noexcept;
   std::span<move_t> generate_tactical_moves(const std::span<move_t, 256> buffer) const noexcept;

@@ -165,6 +165,12 @@ quiet moves by other pieces. Both masks respect check-evasion and pin restrictio
 The `negamax_t` quiescence search uses tactical moves outside check. In check,
 it skips stand pat, searches all legal evasions, and scores checkmate if none exist.
 
+`position_t::tactical(move)` classifies a legal move in the position before it is
+played: captures, all promotions, and pawn moves to the en-passant target are
+tactical. Quiet moves (including castling and non-pawn moves to the en-passant
+target) are not. Compile-time and runtime tests cover both colors, all four
+promotion pieces, and en-passant target creation, expiration, and undo.
+
 The transposition table stores mate scores relative to the stored position:
 winning scores add the current ply on storage and subtract the probe ply on lookup;
 losing scores do the reverse. This preserves mate distance when the same position

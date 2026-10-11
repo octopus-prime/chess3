@@ -7,6 +7,7 @@
 #include <span>
 #include <string_view>
 #include "transposition.hpp"
+#include "killer.hpp"
 
 import types.side;
 import types.type;
@@ -45,7 +46,7 @@ private:
 };
 
 struct negamax_t {
-    explicit negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), nodes_searched{} {}
+    explicit negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), killer(), nodes_searched{} {}
 
     score_t operator()(size_t depth) noexcept {
         return search(depth, 0, MIN, MAX);
@@ -117,11 +118,13 @@ private:
         if (moves.empty())
             return position.checkers() ? score_e(MIN + height) : DRAW;
 
+        const auto killers = killer.get(height);
         const auto get_score = [&](const move_t& move) {
             const score_t best = score_t{KING} * (move == best_move);
             const score_t win = score_t(position.at(move.to()).type()) + score_t(move.promotion());
+            const score_t killer_score = (move == killers[0]) ? score_t{CP} * 75 : (move == killers[1]) ? score_t{CP} * 70 : score_t{DRAW};
             const score_t loss = score_t(position.at(move.from()).type()) / 100;
-            return best + win - loss;
+            return best + win + killer_score - loss;
         };
         std::ranges::sort(moves, std::greater<>(), get_score);
 
@@ -132,6 +135,8 @@ private:
 
             if (score >= beta) {
                 transposition.put(position.hash(), move, beta, LOWER, depth, height);
+                if (!position.tactical(move))
+                    killer.put(move, height);
                 return beta;
             }
             if (score > alpha) {
@@ -188,10 +193,6 @@ private:
         return alpha;
     }
 
-    position_t position;
-    transposition_t transposition;
-    size_t nodes_searched = 0;
-
     score_t evaluate() const noexcept {
         using namespace attacks::generator;
         const side_t side = position.side();
@@ -215,6 +216,10 @@ private:
         return score_t(score);
     }
 
+    position_t position;
+    transposition_t transposition;
+    killer_t killer;
+    size_t nodes_searched;
 };
 
 } // namespace chess

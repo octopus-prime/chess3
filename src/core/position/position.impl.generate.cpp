@@ -85,9 +85,9 @@ std::span<move_t> position_t::generate_all_moves(const std::span<move_t, 256> bu
 }
 
 std::span<move_t> position_t::generate_tactical_moves(const std::span<move_t, 256> buffer) const noexcept {
-    const squares_t captures = by(~side()) | en_passant();
+    const squares_t captures = by(~side());
     const squares_t promotion_rank{side() == WHITE ? _8 : _1};
-    return generate_moves(captures, captures | promotion_rank, buffer);
+    return generate_moves(captures, captures | en_passant() | promotion_rank, buffer);
 }
 
 std::span<move_t> position_t::generate_moves(const squares_t filter, const squares_t pawn_filter,
@@ -228,7 +228,7 @@ std::span<move_t> position_t::generate_moves(const squares_t filter, const squar
     for (const square_t to : en_passant()) {
         const square_t psq{to.file(), side == WHITE ? _5 : _4};
         // The checking pawn is captured on psq, not on the destination.
-        if (_checkers.size() == 1 && !targets[to] && !_checkers[psq])
+        if (_checkers.size() == 1 && !pawn_targets[to] && !_checkers[psq])
             continue;
         for (const square_t from : by(side, P) & pawn(to, ~side)) {
             if (find_valid(from, squares_t{to}).empty())

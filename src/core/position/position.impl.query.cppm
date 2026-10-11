@@ -61,7 +61,11 @@ constexpr squares_t position_t::en_passant() const noexcept {
 constexpr squares_t position_t::castling() const noexcept {
     return _special & squares_t{_1, _8};
 }
-    
+
+constexpr bool position_t::tactical(const move_t move) const noexcept {
+    return move.promotion() != NO_TYPE || at(move.to()).type() != NO_TYPE || (at(move.from()).type() == P && en_passant()[move.to()]);
+}
+
 constexpr std::tuple<squares_t, squares_t> position_t::find_snipers_and_blockers(const side_t side) const noexcept {
     using namespace attacks;
     using namespace attacks::lookup;
