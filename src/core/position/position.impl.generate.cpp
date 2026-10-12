@@ -14,7 +14,7 @@ module core.position;
 
 import :decl;
 // import :impl.query;
-import attacks.lookup;
+import core.attacks.lookup;
 
 namespace chess {
 

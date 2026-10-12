@@ -6,44 +6,80 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
 
-file(GLOB_RECURSE chess_modules CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cppm"
+file(GLOB_RECURSE types_modules CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/types/*.cppm"
 )
-file(GLOB_RECURSE chess_sources CONFIGURE_DEPENDS
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+file(GLOB_RECURSE core_modules CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.cppm"
 )
-
-list(REMOVE_ITEM chess_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
+file(GLOB_RECURSE core_sources CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/core/*.cpp"
+)
+list(REMOVE_ITEM core_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/core/main.cpp")
+file(GLOB_RECURSE engine_modules CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/engine/*.cppm"
+)
+file(GLOB_RECURSE engine_sources CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/engine/*.cpp"
+)
+list(REMOVE_ITEM engine_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/engine/main.cpp")
 
 # add_compile_options(-fprofile-generate)
 # add_link_options(-fprofile-generate)
 
-add_compile_options(-fprofile-use=foo)
-add_link_options(-fprofile-use=foo)
+# llvm-profdata merge -output=foo *.profraw
+
+# add_compile_options(-fprofile-use=foo)
+# add_link_options(-fprofile-use=foo)
+
+add_library(chess_types STATIC)
+target_compile_features(chess_types PUBLIC cxx_std_23)
+target_compile_options(chess_types PUBLIC -march=native -fconstexpr-steps=500000000)
+target_sources(chess_types PUBLIC FILE_SET CXX_MODULES FILES ${types_modules})
 
 add_library(chess_core STATIC)
-target_compile_features(chess_core PUBLIC cxx_std_23)
-target_compile_options(chess_core PUBLIC -march=native -fconstexpr-steps=500000000)
-
+target_link_libraries(chess_core PUBLIC chess_types)
 target_sources(chess_core
-    PUBLIC FILE_SET CXX_MODULES FILES ${chess_modules}
-    PRIVATE ${chess_sources}
+    PUBLIC FILE_SET CXX_MODULES FILES ${core_modules}
+    PRIVATE ${core_sources}
 )
 
-add_executable(chess src/main.cpp)
-target_link_libraries(chess PRIVATE chess_core)
+add_library(chess_engine STATIC)
+target_link_libraries(chess_engine PUBLIC chess_core)
+target_sources(chess_engine
+    PUBLIC FILE_SET CXX_MODULES FILES ${engine_modules}
+    PRIVATE ${engine_sources}
+)
+
+add_executable(perft src/core/main.cpp)
+target_link_libraries(perft PRIVATE chess_core)
+
+add_executable(demo src/engine/main.cpp)
+target_link_libraries(demo PRIVATE chess_engine)
 
 include(CTest)
 if(BUILD_TESTING)
-    add_executable(chess_tests
-        tests/test_main.cpp
-        tests/lookup_tests.cpp
-        tests/position_tests.cpp
-        tests/perft_tests.cpp
+    add_executable(chess_types_tests test/types/main.cpp)
+    target_include_directories(chess_types_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/test")
+    target_link_libraries(chess_types_tests PRIVATE chess_types)
+    add_test(NAME chess.types COMMAND chess_types_tests)
+
+    add_executable(chess_core_tests
+        test/core/main.cpp
+        test/core/lookup.cpp
+        test/core/position.cpp
+        test/core/perft.cpp
     )
-    target_include_directories(chess_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_link_libraries(chess_tests PRIVATE chess_core)
+    target_include_directories(chess_core_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/test")
+    target_link_libraries(chess_core_tests PRIVATE chess_core)
     foreach(suite IN ITEMS lookup position perft)
-        add_test(NAME chess.${suite} COMMAND chess_tests ${suite})
+        add_test(NAME chess.${suite} COMMAND chess_core_tests ${suite})
+        set_tests_properties(chess.${suite} PROPERTIES LABELS core)
     endforeach()
+    add_executable(chess_engine_tests test/engine/main.cpp test/engine/negamax.cpp)
+    target_include_directories(chess_engine_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/test")
+    target_link_libraries(chess_engine_tests PRIVATE chess_engine)
+    add_test(NAME chess.engine COMMAND chess_engine_tests)
+    set_tests_properties(chess.types PROPERTIES LABELS types)
+    set_tests_properties(chess.engine PROPERTIES LABELS engine)
 endif()

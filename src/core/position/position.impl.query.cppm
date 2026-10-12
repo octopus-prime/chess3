@@ -6,7 +6,7 @@ module;
 export module core.position:impl.query;
 
 import :decl;
-import attacks.lookup;
+import core.attacks.lookup;
 
 namespace chess {
 

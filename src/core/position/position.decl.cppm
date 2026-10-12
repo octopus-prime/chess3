@@ -13,7 +13,7 @@ import types.piece;
 import types.side;
 import types.squares;
 import core.move;
-export import hashes.hash;
+export import core.hashes.hash;
 
 export namespace chess {
 

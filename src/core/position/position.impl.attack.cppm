@@ -5,8 +5,8 @@ module;
 export module core.position:impl.attack;
 
 import :decl;
-import attacks.generator;
-import attacks.lookup;
+import core.attacks.generator;
+import core.attacks.lookup;
 
 namespace chess {
 

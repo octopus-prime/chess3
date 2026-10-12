@@ -1,14 +1,24 @@
 # Chess
 
-A C++23 application using C++ modules for chess coordinates and square sets.
-[main.cpp](src/main.cpp) runs the move-generation example and perft benchmark.
-CMake builds the shared static library `chess_core`, the `chess` application,
-and, when `BUILD_TESTING` is enabled, the `chess_tests` executable.
-It automatically discovers `.cpp` and `.cppm` files recursively under `src/`,
-excluding the application entry point from the library.
+A C++23 project using C++ modules, split into three static libraries and two applications:
+
+- `chess_types`: coordinate, square-set, piece, side, type, and score modules;
+  independent of Core and Engine.
+- `chess_core`: positions, moves, attacks, hashes, and perft; links publicly
+  to `chess_types`.
+  [core/main.cpp](src/core/main.cpp) builds the standalone `perft` benchmark.
+- `chess_engine`: negamax, history, killers, and the transposition table; links
+  publicly to `chess_core`. [engine/main.cpp](src/engine/main.cpp) builds `demo`.
+- With `BUILD_TESTING`, `chess_types_tests`, `chess_core_tests`, and
+  `chess_engine_tests` link to their respective libraries. Dependencies flow
+  only from Types to Core to Engine through public links.
+
+CMake discovers modules under `src/types/`, `src/core/`, and `src/engine/`,
+excluding application entry points from libraries.
 Adding or removing matching files triggers CMake reconfiguration during builds.
 
-Module names use `types.*` for types and `attacks.*` for attack generation.
+Module names use `types.*`, `core.*`, and `engine.*`. Attack and hash imports are
+`core.attacks.generator`, `core.attacks.lookup`, and `core.hashes.hash`.
 These dotted names do not change the C++ namespaces (`chess` and
 `chess::attacks::generator`) or implicitly import other modules.
 
@@ -55,11 +65,11 @@ separate `:def` partitions. Consumers use `import types.file;`,
 `attacks::lookup::ray(from, direction)` returns all squares from the next square
 in the specified direction through the board edge, excluding `from` and ignoring
 occupancy. North increases rank; east increases file. The compile-time ray table
-has 64 origins and eight directions. [lookup_tests.cpp](tests/lookup_tests.cpp) checks every entry
+has 64 origins and eight directions. [lookup.cpp](test/core/lookup.cpp) checks every entry
 against coordinate stepping, including empty edge rays, and verifies that the
 eight disjoint rays combine to the empty-board queen attacks.
 
-`test_sinpers_and_blockers` in [position_tests.cpp](tests/position_tests.cpp) checks exact sniper and
+`test_sinpers_and_blockers` in [position.cpp](test/core/position.cpp) checks exact sniper and
 friendly-blocker bitboards at compile time: all eight ray directions, both king
 colors, rook/bishop/queen pins, multiple simultaneous pins, nearest-slider
 selection, board edges, direct checks, enemy blockers, multiple blockers, and
@@ -98,11 +108,11 @@ captures (including en passant), orthodox castling, and promotions to knight,
 bishop, rook, or queen. They update the
 square-to-piece array, side and type bitboards, and side to move. Captured pieces
 are saved in a fixed-capacity stack and restored during undo. Both methods are
-`constexpr`; [position_tests.cpp](tests/position_tests.cpp) checks cached state and round trips
+`constexpr`; [position.cpp](test/core/position.cpp) checks cached state and round trips
 at compile time and runtime, including promotion captures and nested undo.
 
 `position_t::hash()` returns a cached 64-bit Zobrist key using the
-`hashes.hash` lookup tables. FEN construction hashes occupied piece squares,
+`core.hashes.hash` lookup tables. FEN construction hashes occupied piece squares,
 the side key for Black, each castling-right rook square, and the file of any
 stored en-passant target. Empty squares, move counters, and derived attack/pin
 caches are not hashed. An uncapturable en-passant target still contributes:
@@ -144,7 +154,7 @@ remain responsible for these preconditions.
 
 ## Perft
 
-[perft.hpp](src/perft.hpp) contains the existing `perft_t{fen}(depth)` traversal,
+[core.perft](src/core/perft.cppm) contains the existing `perft_t{fen}(depth)` traversal,
 shared by the benchmark and tests. It returns a `size_t` leaf count, uses
 `do_move`/`undo_move`, and bulk-counts generated moves at depth one. It relies on
 the generator for legality. King destinations and castling transit squares use
@@ -162,7 +172,7 @@ capture promotions. `generate_tactical_moves` additionally includes quiet
 promotions to all four pieces, without other quiet moves or castling. It uses
 a separate pawn destination mask so adding the promotion rank cannot admit
 quiet moves by other pieces. Both masks respect check-evasion and pin restrictions.
-The `negamax_t` quiescence search uses tactical moves outside check. In check,
+The [engine.negamax](src/engine/negamax.cppm) quiescence search uses tactical moves outside check. In check,
 it skips stand pat, searches all legal evasions, and scores checkmate if none exist.
 
 `position_t::tactical(move)` classifies a legal move in the position before it is
@@ -187,7 +197,7 @@ The nonnegative-score threshold is an ordering policy, not a static exchange eva
 en passant scoring -1 stays in the final phase unless
 selected earlier as the TT move or a killer.
 
-Quiet moves in the fourth phase use [history.hpp](src/history.hpp), a zero-initialized
+Quiet moves in the fourth phase use [engine.history](src/engine/history.cppm), a zero-initialized
 `int16_t` piece-to table indexed by colored piece and destination square. Remaining
 tactical moves retain their capture/promotion score. History does not affect the
 nonnegative tactical-score partition or TT/killer priority.
@@ -202,11 +212,19 @@ across iterative-deepening calls; constructing a new search starts with zero his
 ## Tests
 
 Tests use CTest without an external test framework. Compile-time assertions
-are built only as part of `chess_tests`; runtime failures print a named check
+are built as part of the test executables; runtime failures print a named check
 and source location and return a nonzero exit status.
+Sources mirror the library layout in `test/types/`, `test/core/`, and
+`test/engine/`, with `main.cpp` as each executable's entry point. The shared
+assertion helper is `test/test_support.hpp`. Test targets link only their
+corresponding library; CMake builds prerequisites before consumers and may
+build independent test targets in parallel.
 
+- `chess.types`: piece/side encoding, coordinate round trips, square-set
+  operations and iteration, and score arithmetic/classification; checked at
+  compile time and runtime while linking only Types.
 - `chess.lookup`: attack generation/lookup assertions and all 512 ray entries.
-- `chess.position`: type/encoding assertions, FEN queries, sniper/blocker
+- `chess.position`: move encoding assertions, FEN queries, sniper/blocker
   assertions, pin detection after move/undo and checker lifecycle tests, all four castling moves, castling
   rights updates, nested castling undo, en-passant execution/generation,
   king-safety edge cases, en-passant target lifetime/restoration, and exact
@@ -216,8 +234,8 @@ and source location and return a nonzero exit status.
   (`1`, `20`, `400`, `8902`, `197281`, `4865609`, `119060324`),
   Kiwipete at depths zero through five
   (`1`, `48`, `2039`, `97862`, `4085603`, `193690690`), focused en-passant positions for both colors
-  at depths zero through two (`1`, `7`, `38`), repeated-call restoration, and
-  quiescence quiet promotions, checkmate, quiet check evasions, and TT mate-score
+  at depths zero through two (`1`, `7`, `38`), and repeated-call restoration.
+- `chess.engine`: quiescence quiet promotions, checkmate, quiet check evasions, and TT mate-score
   conversion across search heights for exact, lower-bound, and upper-bound entries,
   history gravity bounds and piece/square isolation, and history ordering without
   changing capture-phase classification. Ordering tests also check that the
@@ -225,16 +243,19 @@ and source location and return a nonzero exit status.
   penalties to scan only previously searched moves.
 
 CTest is available through VS Code's CMake Tools test integration. To run a suite
-directly, use `./build/chess_tests lookup`, `./build/chess_tests position`, or
-`./build/chess_tests perft`; no argument runs all suites.
-Set `BUILD_TESTING=OFF` to omit the test target entirely.
+directly, use `./build/chess_types_tests` for Types,
+`./build/chess_core_tests lookup`, `./build/chess_core_tests position`, or
+`./build/chess_core_tests perft`; no argument runs all Core suites.
+`./build/chess_engine_tests` runs the Engine suite.
+CTest labels `types`, `core`, and `engine` group tests by library.
+Set `BUILD_TESTING=OFF` to omit all three test targets.
 
 ## Build and run
 
 Requires CMake 3.28 or newer, Ninja, and a compiler supported by CMake's module
 dependency scanning (for example GCC 14+ or Clang 16+ with its matching
 `clang-scan-deps` installed). Use a recent compiler for best module support.
-Link-time optimization (LTO) is enabled for the `chess` target in all build
+Link-time optimization (LTO) is enabled for the libraries and applications in all build
 configurations, so the selected compiler and linker must support LTO.
 Use a Release configuration
 (`-DCMAKE_BUILD_TYPE=Release` for Ninja) for optimized runtime performance.
@@ -245,13 +266,22 @@ GCC or Clang); the executable may not run on CPUs lacking the selected features.
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_CXX_COMPILER=clang++
 cmake --build build
-./build/chess
+./build/perft
+./build/demo
 ```
 
 For GCC, substitute `-DCMAKE_CXX_COMPILER=g++` and use a separate build directory.
 CMake manages module compilation order and compiled module artifacts; no manual
 module flags or header units are needed.
 
-The application prints the move-generation example and perft timings for depths
-zero through five. Tests do not run during application startup or benchmark
-timing.
+`perft` prints perft timings for depths one through six over the benchmark FENs.
+`demo` prints iterative-deepening search scores, cumulative nodes/timings, and
+principal variations for depths one through twelve over the same FENs.
+Tests do not run during application startup or benchmark timing. NNUE and UCI
+can be added to Engine without introducing dependencies into Core.
+
+`core.perft` and `engine.negamax` expose class declarations in their `.cppm`
+interfaces; runtime method definitions live in matching `.cpp` implementation
+units. The lazy ordering template lives in `engine.ordering`, imported by
+Negamax's implementation and the focused ordering tests, not by its public
+interface. LTO remains enabled across library and application boundaries.
