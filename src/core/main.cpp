@@ -5,12 +5,14 @@
 #include <span>
 #include <string_view>
 
+import types.ply;
 import core.perft;
 
 void test_perft(std::string_view fen, size_t max_depth) {
+    using namespace chess;
     using namespace std::chrono;
-    chess::perft_t perft{fen};
-    for (size_t depth = 1; depth <= max_depth; ++depth) {
+    perft_t perft{fen};
+    for (ply_t depth = 1; depth <= max_depth; ++depth) {
         const auto start = steady_clock::now();
         const auto nodes = perft(depth);
         const auto end = steady_clock::now();
@@ -32,7 +34,7 @@ int main() {
         "n1N3br/2p1Bpkr/1pP2R1b/pP1p1PpR/Pp4P1/1P6/1K1P4/8 w - -", // mate in 6
         "r3k3/1pp1p1Kp/1p2P3/1p6/2N5/P2P2pr/5B1p/3Q1R2 w q -" // mate in 8
     };
-    constexpr size_t depth = 6;
+    constexpr chess::ply_t depth = 6;
     for (const std::string_view fen : fens) {
         std::cout << "FEN: " << fen << "\n";
         test_perft(fen, depth);

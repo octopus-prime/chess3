@@ -174,6 +174,11 @@ a separate pawn destination mask so adding the promotion rank cannot admit
 quiet moves by other pieces. Both masks respect check-evasion and pin restrictions.
 The [engine.negamax](src/engine/negamax.cppm) quiescence search uses tactical moves outside check. In check,
 it skips stand pat, searches all legal evasions, and scores checkmate if none exist.
+Engine search depths, heights, principal-variation lengths, history bonuses,
+killer indices, and transposition-table depths use `ply_t` (`uint8_t`).
+Search stops extending at height 255 to prevent height wraparound. At that
+horizon it still detects checkmate, otherwise using static evaluation in check
+or the stand-pat alpha bound outside check. The demo prints depths numerically.
 
 `position_t::tactical(move)` classifies a legal move in the position before it is
 played: captures, all promotions, and pawn moves to the en-passant target are
@@ -221,7 +226,8 @@ corresponding library; CMake builds prerequisites before consumers and may
 build independent test targets in parallel.
 
 - `chess.types`: piece/side encoding, coordinate round trips, square-set
-  operations and iteration, and score arithmetic/classification; checked at
+  operations and iteration, score arithmetic/classification, 64-bit hash
+  boundaries and reversible XOR updates, and ply range/arithmetic; checked at
   compile time and runtime while linking only Types.
 - `chess.lookup`: attack generation/lookup assertions and all 512 ray entries.
 - `chess.position`: move encoding assertions, FEN queries, sniper/blocker

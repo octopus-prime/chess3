@@ -5,14 +5,15 @@ module;
 
 export module core.perft;
 
+import types.ply;
 import core.position;
 
 export namespace chess {
 
-struct perft_t {
+struct perft_t final {
     explicit perft_t(const std::string_view fen) noexcept;
 
-    size_t operator()(size_t depth) noexcept;
+    size_t operator()(ply_t depth) noexcept;
 
 private:
     position_t position;

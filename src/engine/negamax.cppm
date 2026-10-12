@@ -9,6 +9,7 @@ export module engine.negamax;
 export import core.move;
 export import types.square;
 export import types.score;
+export import types.ply;
 import core.position;
 import engine.transposition;
 import engine.killer;
@@ -16,21 +17,21 @@ import engine.history;
 
 export namespace chess {
 
-struct negamax_t {
+struct negamax_t final {
     explicit negamax_t(const std::string_view fen) noexcept;
 
-    score_t operator()(size_t depth) noexcept;
+    score_t operator()(ply_t depth) noexcept;
 
     size_t nodes() const noexcept;
 
     size_t full() const noexcept;
 
-    std::span<move_t> extract_pv(const std::span<move_t, 256> buffer, size_t max_length) noexcept;
+    std::span<move_t> extract_pv(const std::span<move_t, 256> buffer, ply_t max_length) noexcept;
 
 private:
-    score_t search(size_t depth, size_t height, score_t alpha, score_t beta) noexcept;
+    score_t search(ply_t depth, ply_t height, score_t alpha, score_t beta) noexcept;
 
-    score_t qsearch(size_t height, score_t alpha, score_t beta) noexcept;
+    score_t qsearch(ply_t height, score_t alpha, score_t beta) noexcept;
 
     score_t evaluate() const noexcept;
 

@@ -4,6 +4,7 @@ module;
 #include <array>
 #include <cstddef>
 #include <functional>
+#include <limits>
 #include <ranges>
 #include <span>
 #include <string_view>
@@ -19,7 +20,7 @@ namespace chess {
 
 negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(96), killer(), history(), nodes_searched{} {}
 
-score_t negamax_t::operator()(size_t depth) noexcept {
+score_t negamax_t::operator()(ply_t depth) noexcept {
     return search(depth, 0, MIN, MAX);
 }
 
@@ -31,8 +32,8 @@ size_t negamax_t::full() const noexcept {
     return transposition.full();
 }
 
-std::span<move_t> negamax_t::extract_pv(const std::span<move_t, 256> buffer, size_t max_length) noexcept {
-    size_t length = 0;
+std::span<move_t> negamax_t::extract_pv(const std::span<move_t, 256> buffer, ply_t max_length) noexcept {
+    ply_t length = 0;
     while (length < max_length) {
         const auto entry = transposition.get(position.hash(), length);
         if (!entry || entry->move == move_t{})
@@ -42,14 +43,14 @@ std::span<move_t> negamax_t::extract_pv(const std::span<move_t, 256> buffer, siz
         position.do_move(entry->move);
     }
 
-    for (size_t i = length; i-- > 0;)
-        position.undo_move(buffer[i]);
+    for (ply_t i = length; i > 0; --i)
+        position.undo_move(buffer[i - 1]);
 
     return buffer.first(length);
 }
 
-score_t negamax_t::search(size_t depth, size_t height, score_t alpha, score_t beta) noexcept {
-    if (depth == 0)
+score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta) noexcept {
+    if (depth == 0 || height == std::numeric_limits<ply_t>::max())
         return qsearch(height, alpha, beta);
 
     ++nodes_searched;
@@ -129,7 +130,7 @@ score_t negamax_t::search(size_t depth, size_t height, score_t alpha, score_t be
     return alpha;
 }
 
-score_t negamax_t::qsearch(size_t height, score_t alpha, score_t beta) noexcept {
+score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     ++nodes_searched;
 
     const bool in_check = !position.checkers().empty();
@@ -147,6 +148,8 @@ score_t negamax_t::qsearch(size_t height, score_t alpha, score_t beta) noexcept 
         : position.generate_tactical_moves(buffer);
     if (in_check && moves.empty())
         return score_e(MIN + height);
+    if (height == std::numeric_limits<ply_t>::max())
+        return in_check ? evaluate() : alpha;
     const auto get_score = [&](const move_t& move) {
         const score_t win = score_t(position.at(move.to()).type()) + score_t(move.promotion());
         const score_t loss = score_t(position.at(move.from()).type()) / 100;

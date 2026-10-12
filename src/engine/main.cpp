@@ -15,12 +15,13 @@ std::ostream& operator<<(std::ostream& os, const chess::move_t move) {
     return os << move.from() << move.to();
 }
 
-void test_negamax(std::string_view fen, size_t max_depth) {
+void test_negamax(std::string_view fen, chess::ply_t max_depth) {
     using namespace std::chrono;
     chess::negamax_t negamax{fen};
     std::array<chess::move_t, 256> buffer;
     const auto start = steady_clock::now();
-    for (size_t depth = 1; depth <= max_depth; ++depth) {
+    for (chess::ply_t depth = 0; depth < max_depth;) {
+        ++depth;
         const auto score = negamax(depth);
         const auto end = steady_clock::now();
         const auto ns = duration_cast<nanoseconds>(end - start).count();
@@ -28,7 +29,7 @@ void test_negamax(std::string_view fen, size_t max_depth) {
         const auto pv = negamax.extract_pv(buffer, depth);
         const auto nodes = negamax.nodes();
         const auto full = negamax.full();
-        std::cout << "depth: " << depth << ", score: " << score << ", time: " << ms << " ms, nodes: " << nodes << " perf: " << nodes * 1e3 / ns << " MN/s, full: " << full << ", pv: ";
+        std::cout << "depth: " << int{depth} << ", score: " << score << ", time: " << ms << " ms, nodes: " << nodes << " perf: " << nodes * 1e3 / ns << " MN/s, full: " << full << ", pv: ";
         for (const auto& move : pv)
             std::cout << move << " ";
         std::cout << "\n";
@@ -47,7 +48,7 @@ int main() {
         "n1N3br/2p1Bpkr/1pP2R1b/pP1p1PpR/Pp4P1/1P6/1K1P4/8 w - -", // mate in 6
         "r3k3/1pp1p1Kp/1p2P3/1p6/2N5/P2P2pr/5B1p/3Q1R2 w q -" // mate in 8
     };
-    constexpr size_t depth = 12;
+    constexpr chess::ply_t depth = 12;
     for (const std::string_view fen : fens) {
         std::cout << "FEN: " << fen << "\n";
         test_negamax(fen, depth);

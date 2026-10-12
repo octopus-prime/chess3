@@ -1,6 +1,8 @@
 #include <array>
 #include <cstdint>
 #include <iostream>
+#include <limits>
+#include <type_traits>
 #include <algorithm>
 #include <ranges>
 #include <span>
@@ -9,10 +11,12 @@
 import engine.negamax;
 import engine.ordering;
 import engine.history;
+import engine.killer;
 import engine.transposition;
 import core.position;
 import types.piece;
 import types.hash;
+import types.ply;
 
 bool test_tt_mate_scores() {
     using namespace chess;
@@ -36,8 +40,8 @@ bool test_tt_mate_scores() {
     const move_t move{e7, e8, Q};
     bool passed = true;
     for (const flag_e flag : {EXACT, LOWER, UPPER}) {
-        for (const size_t stored_height : {size_t{0}, size_t{7}, size_t{1023}}) {
-            for (const size_t probed_height : {size_t{0}, size_t{3}, size_t{1023}}) {
+        for (const ply_t stored_height : {ply_t{0}, ply_t{7}, std::numeric_limits<ply_t>::max()}) {
+            for (const ply_t probed_height : {ply_t{0}, ply_t{3}, std::numeric_limits<ply_t>::max()}) {
                 for (const bool winning : {false, true}) {
                     const score_t stored_score = winning
                         ? score_e(MAX - 5 - static_cast<int>(stored_height))
@@ -45,11 +49,13 @@ bool test_tt_mate_scores() {
                     const score_t expected_score = winning
                         ? score_e(MAX - 5 - static_cast<int>(probed_height))
                         : score_e(MIN + 5 + static_cast<int>(probed_height));
-                    table.put(hash_t{1}, move, stored_score, flag, 9, stored_height);
+                    constexpr ply_t depth = std::numeric_limits<ply_t>::max();
+                    table.put(hash_t{1}, move, stored_score, flag, depth, stored_height);
                     const auto entry = table.get(hash_t{1}, probed_height);
+                    static_assert(std::is_same_v<decltype(entry->depth), ply_t>);
                     passed &= test_support::check(
                         entry && entry->score == expected_score && entry->move == move &&
-                            entry->flag == flag && entry->depth == 9,
+                            entry->flag == flag && entry->depth == depth,
                         "TT mate distance adjusts to probe ply for exact and bound entries");
                     const auto same_ply = table.get(hash_t{1}, stored_height);
                     passed &= test_support::check(same_ply && same_ply->score == stored_score,
@@ -242,10 +248,31 @@ constexpr bool test_history_updates() {
         history.get(BN, f6) == history_t::LIMIT &&
         history_t::bonus(0) == 0 && history_t::bonus(1) == 16 &&
         history_t::bonus(2) == 64 && history_t::bonus(11) == 1936 &&
-        history_t::bonus(12) == 2048 && history_t::bonus(size_t(-1)) == 2048;
+        history_t::bonus(12) == 2048 &&
+        history_t::bonus(std::numeric_limits<ply_t>::max()) == 2048;
 }
 
 static_assert(test_history_updates());
+
+constexpr bool test_killer_heights() {
+    using namespace chess;
+    killer_t killer;
+    constexpr ply_t last = std::numeric_limits<ply_t>::max();
+    const move_t first{e2, e4};
+    const move_t second{d2, d4};
+    killer.put(first, last);
+    killer.put(second, last);
+    killer.put(second, last);
+    return killer.get(last)[0] == second && killer.get(last)[1] == first &&
+        killer.get(0)[0] == move_t{} && killer.get(last - 1)[0] == move_t{};
+}
+
+static_assert(test_killer_heights());
+static_assert(std::is_same_v<decltype(&chess::negamax_t::operator()),
+                            chess::score_t (chess::negamax_t::*)(chess::ply_t) noexcept>);
+static_assert(std::is_same_v<decltype(&chess::negamax_t::extract_pv),
+                            std::span<chess::move_t> (chess::negamax_t::*)(
+                                std::span<chess::move_t, 256>, chess::ply_t) noexcept>);
 
 bool test_history_ordering() {
     using namespace chess;
@@ -294,6 +321,7 @@ bool run_engine_tests() {
     passed &= test_lazy_move_ordering();
     passed &= test_phased_move_ordering();
     passed &= test_support::check(test_history_updates(), "piece-to history gravity updates");
+    passed &= test_support::check(test_killer_heights(), "killers support the maximum ply height");
     passed &= test_history_ordering();
     for (const auto fen : {"k7/4P3/8/8/8/8/8/7K w - - 0 1",
                           "7k/8/8/8/8/8/4p3/K7 b - - 0 1"}) {
@@ -309,9 +337,19 @@ bool run_engine_tests() {
     chess::negamax_t mate{"k7/1Q6/2K5/8/8/8/8/8 b - - 0 1"};
     passed &= test_support::check(mate(0) == chess::MIN,
                                   "quiescence detects checkmate without stand pat");
+    passed &= test_support::check(mate(std::numeric_limits<chess::ply_t>::max()) == chess::MIN,
+                                  "search accepts the maximum ply depth");
     chess::negamax_t mate_in_one{"k7/8/1QK5/8/8/8/8/8 w - - 0 1"};
     passed &= test_support::check(mate_in_one(1) == chess::MAX - 1,
                                   "search scores mate in one at the correct distance");
+    std::array<chess::move_t, 256> pv_buffer;
+    passed &= test_support::check(mate_in_one.extract_pv(pv_buffer, 0).empty(),
+                                  "zero-length PV extraction leaves the position unchanged");
+    const auto pv = mate_in_one.extract_pv(pv_buffer, std::numeric_limits<chess::ply_t>::max());
+    passed &= test_support::check(pv.size() == 1,
+                                  "PV extraction accepts the maximum ply length");
+    passed &= test_support::check(mate_in_one(1) == chess::MAX - 1,
+                                  "PV extraction restores the root position");
     chess::negamax_t evasion{"k3r3/8/8/8/8/8/8/4K3 w - - 0 1"};
     const auto evasion_score = evasion(0);
     passed &= test_support::check(evasion.nodes() > 1 && evasion_score > chess::LOSS,

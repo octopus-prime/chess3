@@ -15,7 +15,7 @@ namespace chess {
 
 perft_t::perft_t(const std::string_view fen) noexcept : position(fen) {}
 
-size_t perft_t::operator()(size_t depth) noexcept {
+size_t perft_t::operator()(ply_t depth) noexcept {
     if (depth == 0)
         return 1;
 

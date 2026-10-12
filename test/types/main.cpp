@@ -1,12 +1,16 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
+#include <type_traits>
 
 #include "test_support.hpp"
 
 import types.piece;
 import types.squares;
 import types.score;
+import types.hash;
+import types.ply;
 
 namespace {
 
@@ -80,10 +84,52 @@ constexpr bool test_scores() {
         score_t{IGNORE}.ignore() && (-score_t{IGNORE}).ignore();
 }
 
+constexpr bool test_hashes() {
+    using namespace chess;
+    static_assert(std::is_same_v<hash_t, uint64_t>);
+    static_assert(std::numeric_limits<hash_t>::digits == 64);
+    static_assert(std::numeric_limits<hash_t>::min() == 0);
+    static_assert(std::numeric_limits<hash_t>::max() == UINT64_MAX);
+    constexpr hash_t high_bit = hash_t{1} << 63;
+    constexpr hash_t key = 0x0123456789abcdef;
+    hash_t hash{};
+    if (hash != 0 || (high_bit >> 63) != 1)
+        return false;
+    hash ^= key;
+    hash ^= high_bit;
+    if (hash != (key | high_bit))
+        return false;
+    hash ^= high_bit;
+    if (hash != key)
+        return false;
+    hash ^= key;
+    return hash == 0 && ~hash == std::numeric_limits<hash_t>::max();
+}
+
+constexpr bool test_plies() {
+    using namespace chess;
+    static_assert(std::is_same_v<ply_t, uint8_t>);
+    static_assert(std::numeric_limits<ply_t>::digits == 8);
+    static_assert(std::numeric_limits<ply_t>::min() == 0);
+    static_assert(std::numeric_limits<ply_t>::max() == 255);
+    ply_t height{};
+    ply_t depth = std::numeric_limits<ply_t>::max();
+    for (int step = 0; step < 255; ++step) {
+        if (int{height} != step || int{depth} != 255 - step)
+            return false;
+        ++height;
+        --depth;
+    }
+    return height == std::numeric_limits<ply_t>::max() && depth == 0 &&
+        height + 1 == 256 && depth - 1 == -1;
+}
+
 static_assert(test_piece_and_side());
 static_assert(test_coordinates());
 static_assert(test_square_sets());
 static_assert(test_scores());
+static_assert(test_hashes());
+static_assert(test_plies());
 
 } // namespace
 
@@ -92,5 +138,7 @@ int main() {
     passed &= test_support::check(test_coordinates(), "coordinate round trips");
     passed &= test_support::check(test_square_sets(), "square sets and iteration");
     passed &= test_support::check(test_scores(), "score arithmetic and classification");
+    passed &= test_support::check(test_hashes(), "hash width and reversible XOR updates");
+    passed &= test_support::check(test_plies(), "ply range and depth/height arithmetic");
     return passed ? 0 : 1;
 }

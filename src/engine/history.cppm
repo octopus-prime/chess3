@@ -13,10 +13,11 @@ export module engine.history;
 
 import types.piece;
 import types.square;
+import types.ply;
 
 export namespace chess {
 
-struct history_t {
+struct history_t final {
     static constexpr int LIMIT = 16384;
 
     constexpr int get(const piece_t piece, const square_t to) const noexcept {
@@ -31,8 +32,8 @@ struct history_t {
         entry = static_cast<int16_t>(value + bonus - value * magnitude / LIMIT);
     }
 
-    static constexpr int bonus(const size_t depth) noexcept {
-        const int bounded_depth = static_cast<int>(std::min(depth, size_t{12}));
+    static constexpr int bonus(const ply_t depth) noexcept {
+        const int bounded_depth = std::min(int{depth}, 12);
         return std::min(16 * bounded_depth * bounded_depth, 2048);
     }
 
