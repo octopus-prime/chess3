@@ -9,6 +9,7 @@
 #include <string_view>
 #include "transposition.hpp"
 #include "killer.hpp"
+#include "history.hpp"
 
 import types.side;
 import types.type;
@@ -23,9 +24,9 @@ namespace chess {
 
 namespace detail {
 
-template <typename Projection>
-auto ordered_moves(const std::span<move_t> moves, const move_t best_move, const std::span<const move_t, 2> killer_moves, Projection get_score) noexcept {
-    const auto create = [moves, best_move, killer_moves, get_score, count = size_t{}](const int phase) mutable -> std::span<move_t> {
+template <typename Projection, typename RemainingProjection>
+auto ordered_moves(const position_t& position, const std::span<move_t> moves, const move_t best_move, const std::span<const move_t, 2> killer_moves, Projection get_score, RemainingProjection get_history_score) noexcept {
+    const auto create = [&position, moves, best_move, killer_moves, get_score, get_history_score, count = size_t{}](const int phase) mutable -> std::span<move_t> {
         const auto remaining = moves.subspan(count);
         switch (phase) {
             case 0: {
@@ -36,7 +37,7 @@ auto ordered_moves(const std::span<move_t> moves, const move_t best_move, const 
                 return remaining.first(count);
             }
             case 1: {
-                const auto tail = std::ranges::partition(remaining, [&](const move_t move) { return get_score(move) > 0; });
+                const auto tail = std::ranges::partition(remaining, [&](const move_t move) { return position.tactical(move) && get_score(move) >= 0; });
                 const auto result = remaining.first(tail.begin() - remaining.begin());
                 count += result.size();
                 std::ranges::sort(result, std::greater<>(), get_score);
@@ -55,6 +56,13 @@ auto ordered_moves(const std::span<move_t> moves, const move_t best_move, const 
                 count += found;
                 return remaining.first(found);
             }
+            case 3: {
+                const auto tail = std::ranges::partition(remaining, [&](const move_t move) { return !position.tactical(move); });
+                const auto result = remaining.first(tail.begin() - remaining.begin());
+                count += result.size();
+                std::ranges::sort(result, std::greater<>(), get_history_score);
+                return result;
+            }
             default: {
                 std::ranges::sort(remaining, std::greater<>(), get_score);
                 count += remaining.size();
@@ -62,8 +70,13 @@ auto ordered_moves(const std::span<move_t> moves, const move_t best_move, const 
             }
         }
     };
-    return std::views::iota(0, 4) | std::views::transform(create) | std::views::join;
+    return std::views::iota(0, 5) | std::views::transform(create) | std::views::join;
 }
+
+// template <typename Projection>
+// auto ordered_moves(const std::span<move_t> moves, const move_t best_move, const std::span<const move_t, 2> killer_moves, Projection get_score) noexcept {
+//     return ordered_moves(moves, best_move, killer_moves, get_score, get_score);
+// }
 
 } // namespace detail
 
@@ -93,7 +106,7 @@ private:
 };
 
 struct negamax_t {
-    explicit negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), killer(), nodes_searched{} {}
+    explicit negamax_t(const std::string_view fen) noexcept : position(fen), transposition(96), killer(), history(), nodes_searched{} {}
 
     score_t operator()(size_t depth) noexcept {
         return search(depth, 0, MIN, MAX);
@@ -166,7 +179,10 @@ private:
             const score_t loss = score_t(position.at(move.from()).type()) / 100;
             return win - loss;
         };
-        auto ordered = detail::ordered_moves(moves, best_move, killer.get(height), get_score);
+        const auto get_history_score = [&](const move_t move) {
+            return history.get(position.at(move.from()), move.to());
+        };
+        auto ordered = detail::ordered_moves(position, moves, best_move, killer.get(height), get_score, get_history_score);
 
         for (const move_t& move : ordered) {
             position.do_move(move);
@@ -175,8 +191,17 @@ private:
 
             if (score >= beta) {
                 transposition.put(position.hash(), move, beta, LOWER, depth, height);
-                if (!position.tactical(move))
+                if (!position.tactical(move)) {
                     killer.put(move, height);
+                    const int bonus = history_t::bonus(depth);
+                    history.update(position.at(move.from()), move.to(), bonus);
+                    for (const move_t previous : moves) {
+                        if (previous == move)
+                            break;
+                        if (!position.tactical(previous))
+                            history.update(position.at(previous.from()), previous.to(), -bonus);
+                    }
+                }
                 return beta;
             }
             if (score > alpha) {
@@ -259,6 +284,7 @@ private:
     position_t position;
     transposition_t transposition;
     killer_t killer;
+    history_t history;
     size_t nodes_searched;
 };
 

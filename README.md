@@ -177,14 +177,27 @@ losing scores do the reverse. This preserves mate distance when the same positio
 is reached at different search heights. Exact scores and both bound types use
 the same conversion; ordinary evaluations and ignore sentinels are unchanged.
 
-Main-search move ordering uses four lazy spans flattened with C++23 `views::join`:
-the legal TT move, remaining moves scoring above zero sorted descending,
-both killers in one phase in priority order, and the rest sorted descending. Each phase
+Main-search move ordering uses five lazy spans flattened with C++23 `views::join`:
+the legal TT move, tactical moves scoring at least zero sorted descending,
+both killers in priority order, quiet moves sorted by history, and remaining
+tactical moves sorted by capture/promotion score. Each phase
 only processes the unconsumed suffix. A cutoff skips later phases. Missing or
 already-consumed TT/killer moves are ignored; every legal move is visited once.
-The positive-score threshold is an ordering policy, not a tactical-move predicate:
+The nonnegative-score threshold is an ordering policy, not a static exchange evaluation:
 en passant scoring -1 stays in the final phase unless
 selected earlier as the TT move or a killer.
+
+Quiet moves in the fourth phase use [history.hpp](src/history.hpp), a zero-initialized
+`int16_t` piece-to table indexed by colored piece and destination square. Remaining
+tactical moves retain their capture/promotion score. History does not affect the
+nonnegative tactical-score partition or TT/killer priority.
+A quiet beta cutoff rewards its move and penalizes previously searched quiet
+moves at that node, after restoring the parent position. The depth bonus is
+`min(16 * depth * depth, 2048)`, calculated with a bounded depth to avoid overflow.
+Updates use history gravity (`value += bonus - value * abs(bonus) / 16384`) with
+the bonus clamped to `[-16384, 16384]` and arithmetic in `int`. Captures and
+promotions do not update history. Each `negamax_t` owns its table and retains it
+across iterative-deepening calls; constructing a new search starts with zero history.
 
 ## Tests
 
@@ -205,7 +218,11 @@ and source location and return a nonzero exit status.
   (`1`, `48`, `2039`, `97862`, `4085603`, `193690690`), focused en-passant positions for both colors
   at depths zero through two (`1`, `7`, `38`), repeated-call restoration, and
   quiescence quiet promotions, checkmate, quiet check evasions, and TT mate-score
-  conversion across search heights for exact, lower-bound, and upper-bound entries.
+  conversion across search heights for exact, lower-bound, and upper-bound entries,
+  history gravity bounds and piece/square isolation, and history ordering without
+  changing capture-phase classification. Ordering tests also check that the
+  underlying buffer prefix matches the searched sequence, allowing cutoff
+  penalties to scan only previously searched moves.
 
 CTest is available through VS Code's CMake Tools test integration. To run a suite
 directly, use `./build/chess_tests lookup`, `./build/chess_tests position`, or
