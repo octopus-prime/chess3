@@ -10,7 +10,7 @@ import core.attacks.lookup;
 
 namespace chess {
 
-constexpr squares_t position_t::attackers(const side_t side) const noexcept {
+constexpr squares_t position_t::attacked_by(const side_t side) const noexcept {
     using namespace attacks::generator;
     std::underlying_type_t<squares_e> attackers{};
     attackers |= leapers(by(side, K), by(side, N));
@@ -19,7 +19,7 @@ constexpr squares_t position_t::attackers(const side_t side) const noexcept {
     return squares_e(attackers);
 }
 
-constexpr squares_t position_t::attackers(const square_t square) const noexcept {
+constexpr squares_t position_t::attackers_of(const square_t square) const noexcept {
     using namespace attacks::lookup;
     std::underlying_type_t<squares_e> attackers{};
     attackers |= king(square) & by(K);

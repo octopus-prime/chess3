@@ -1,8 +1,6 @@
 module;
 
-#include <algorithm>
 #include <cassert>
-#include <iterator>
 #include <span>
 #include <immintrin.h>
 #include <cstdint>
@@ -10,11 +8,9 @@ module;
 #include <tuple>
 #include <functional>
 
-// export module core.position:impl.move;
 module core.position;
 
 import :decl;
-// import :impl.query;
 import core.attacks.lookup;
 
 namespace chess {
@@ -101,7 +97,7 @@ std::span<move_t> position_t::generate_moves(const squares_t filter, const squar
     const squares_t enemies = by(~side);
     const squares_t us = by(side);
     const square_t ksq = by(side, K).front();
-    const squares_t attacked = attackers(~side);
+    const squares_t attacked = attacked_by(~side);
 
     squares_t targets = filter;
     squares_t pawn_targets = pawn_filter;

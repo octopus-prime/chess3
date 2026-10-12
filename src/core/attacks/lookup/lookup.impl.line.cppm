@@ -9,7 +9,6 @@ import :impl.bishop;
 import :impl.rook;
 import types.squares;
 import types.side;
-// import core.attacks.generator;
 
 namespace chess::attacks::lookup {
 

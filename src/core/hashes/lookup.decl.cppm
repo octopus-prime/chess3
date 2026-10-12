@@ -1,8 +1,5 @@
 module; 
 
-#include <cstddef>
-#include <cstdint>
-
 export module core.hashes.lookup:decl;
 
 import types.hash;
