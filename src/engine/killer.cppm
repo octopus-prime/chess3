@@ -2,16 +2,6 @@ module;
 
 #include <array>
 #include <span>
-#include <cstddef>
-#include <limits>
-
-#include <cstdint>
-#include <vector>
-#include <optional>
-#include <algorithm>
-#include <tuple>
-#include <type_traits>
-#include <ranges>
 
 export module engine.killer;
 

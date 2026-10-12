@@ -1,6 +1,5 @@
 #include <array>
 #include <chrono>
-#include <cstddef>
 #include <iostream>
 #include <span>
 #include <string_view>
