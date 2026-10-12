@@ -61,7 +61,7 @@ auto ordered_moves(const position_t& position, const std::span<move_t> moves, co
             }
         }
     };
-    return std::views::iota(0, 5) | std::views::transform(create) | std::views::join;
+    return std::views::transform(std::views::iota(0, 5), create) | std::views::join;
 }
 
 } // namespace detail

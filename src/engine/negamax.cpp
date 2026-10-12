@@ -6,6 +6,7 @@ module;
 #include <functional>
 #include <span>
 #include <string_view>
+#include <ranges>
 
 module engine.negamax;
 
