@@ -56,7 +56,7 @@ std::optional<transposition_t::entry_t> transposition_t::get(const hash_t hash, 
 }
 
 size_t transposition_t::full() const noexcept {
-    return size_t(1000.f * _used / _buckets.size() * BUCKET_SIZE);
+    return size_t(1000.f * _used / (_buckets.size() * BUCKET_SIZE));
 }
 
 } // namespace chess

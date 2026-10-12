@@ -32,7 +32,7 @@ size_t negamax_t::full() const noexcept {
     return transposition.full();
 }
 
-std::span<move_t> negamax_t::extract_pv(const std::span<move_t, 256> buffer, ply_t max_length) noexcept {
+std::span<move_t> negamax_t::extract_pv(const std::span<move_t, MAX_PLY> buffer, ply_t max_length) noexcept {
     ply_t length = 0;
     while (length < max_length) {
         const auto entry = transposition.get(position.hash(), length);
@@ -50,7 +50,7 @@ std::span<move_t> negamax_t::extract_pv(const std::span<move_t, 256> buffer, ply
 }
 
 score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta) noexcept {
-    if (depth == 0 || height == std::numeric_limits<ply_t>::max())
+    if (depth == 0 || height == MAX_PLY - 1)
         return qsearch(height, alpha, beta);
 
     ++nodes_searched;
@@ -134,6 +134,10 @@ score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     ++nodes_searched;
 
     const bool in_check = !position.checkers().empty();
+
+    if (height == MAX_PLY - 1)
+        return in_check ? evaluate() : alpha;
+
     if (!in_check) {
         const score_t stand_pat = evaluate();
         if (stand_pat >= beta)
@@ -146,10 +150,10 @@ score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     const std::span<move_t> moves = in_check
         ? position.generate_all_moves(buffer)
         : position.generate_tactical_moves(buffer);
+
     if (in_check && moves.empty())
         return score_e(MIN + height);
-    if (height == std::numeric_limits<ply_t>::max())
-        return in_check ? evaluate() : alpha;
+
     const auto get_score = [&](const move_t& move) {
         const score_t win = score_t(position.at(move.to()).type()) + score_t(move.promotion());
         const score_t loss = score_t(position.at(move.from()).type()) / 100;

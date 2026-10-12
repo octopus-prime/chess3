@@ -19,20 +19,14 @@ export namespace chess {
 
 struct negamax_t final {
     explicit negamax_t(const std::string_view fen) noexcept;
-
     score_t operator()(ply_t depth) noexcept;
-
     size_t nodes() const noexcept;
-
     size_t full() const noexcept;
-
-    std::span<move_t> extract_pv(const std::span<move_t, 256> buffer, ply_t max_length) noexcept;
+    std::span<move_t> extract_pv(const std::span<move_t, MAX_PLY> buffer, ply_t max_length) noexcept;
 
 private:
     score_t search(ply_t depth, ply_t height, score_t alpha, score_t beta) noexcept;
-
     score_t qsearch(ply_t height, score_t alpha, score_t beta) noexcept;
-
     score_t evaluate() const noexcept;
 
     position_t position;
