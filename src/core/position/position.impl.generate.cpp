@@ -8,6 +8,7 @@ module;
 #include <cstdint>
 #include <cstring>
 #include <tuple>
+#include <functional>
 
 // export module core.position:impl.move;
 module core.position;
@@ -241,6 +242,42 @@ std::span<move_t> position_t::generate_moves(const squares_t filter, const squar
     }
 
     return buffer.first(count);
+}
+
+std::tuple<squares_t, squares_t> position_t::find_snipers_and_blockers(const side_t side) const noexcept {
+    using namespace attacks::lookup;
+
+    const square_t ksq = by(side, K).front();
+
+    squares_t snipers{};
+    squares_t blockers{};
+
+    auto scan = [&](const direction_e direction, const squares_t candidates, auto&& find_nearest) {
+        const squares_t sniper_candidates = ray(ksq, direction) & candidates;
+        if (sniper_candidates.empty())
+            return;
+        const square_t sniper = std::invoke(find_nearest, sniper_candidates);
+        const squares_t between = line(ksq, sniper) & by() & ~squares_t{ksq, sniper};
+        const squares_t blocker_candidates = between & by(side);
+        if (between.size() != 1 || blocker_candidates.empty())
+            return;
+        const square_t blocker = blocker_candidates.front();
+        snipers.set(sniper);
+        blockers.set(blocker);
+    };
+
+    const squares_t rooks = by(~side, R, Q);
+    scan(NORTH, rooks, &squares_t::front);
+    scan(SOUTH, rooks, &squares_t::back);
+    scan(EAST, rooks, &squares_t::front);
+    scan(WEST, rooks, &squares_t::back);
+    const squares_t bishops = by(~side, B, Q);
+    scan(NORTH_EAST, bishops, &squares_t::front);
+    scan(NORTH_WEST, bishops, &squares_t::front);
+    scan(SOUTH_EAST, bishops, &squares_t::back);
+    scan(SOUTH_WEST, bishops, &squares_t::back);
+
+    return {snipers, blockers};
 }
 
 } // namespace chess

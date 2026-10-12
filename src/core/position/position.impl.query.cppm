@@ -1,8 +1,5 @@
 module;
 
-#include <functional>
-#include <tuple>
-
 export module core.position:impl.query;
 
 import :decl;
@@ -64,40 +61,6 @@ constexpr squares_t position_t::castling() const noexcept {
 
 constexpr bool position_t::tactical(const move_t move) const noexcept {
     return move.promotion() != NO_TYPE || at(move.to()).type() != NO_TYPE || (at(move.from()).type() == P && en_passant()[move.to()]);
-}
-
-constexpr std::tuple<squares_t, squares_t> position_t::find_snipers_and_blockers(const side_t side) const noexcept {
-    using namespace attacks::lookup;
-
-    const square_t ksq = by(side, K).front();
-
-    squares_t snipers{};
-    squares_t blockers{};
-
-    auto scan = [&](const direction_e direction, const squares_t candidates, auto&& find_nearest) {
-        const squares_t sniper_candidates = ray(ksq, direction) & candidates;
-        if (sniper_candidates.empty())
-            return;
-        const square_t sniper = std::invoke(find_nearest, sniper_candidates);
-        const squares_t between = line(ksq, sniper) & by() & ~squares_t{ksq} & ~squares_t{sniper};
-        const squares_t blocker_candidates = between & by(side);
-        if (between.size() != 1 || blocker_candidates.empty())
-            return;
-        const square_t blocker = blocker_candidates.front();
-        snipers.set(sniper);
-        blockers.set(blocker);
-    };
-
-    scan(NORTH, by(~side, R, Q), &squares_t::front);
-    scan(SOUTH, by(~side, R, Q), &squares_t::back);
-    scan(EAST, by(~side, R, Q), &squares_t::front);
-    scan(WEST, by(~side, R, Q), &squares_t::back);
-    scan(NORTH_EAST, by(~side, B, Q), &squares_t::front);
-    scan(NORTH_WEST, by(~side, B, Q), &squares_t::front);
-    scan(SOUTH_EAST, by(~side, B, Q), &squares_t::back);
-    scan(SOUTH_WEST, by(~side, B, Q), &squares_t::back);
-
-    return {snipers, blockers};
 }
 
 } // namespace chess

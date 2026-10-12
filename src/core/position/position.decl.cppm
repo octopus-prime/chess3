@@ -56,11 +56,11 @@ struct position_t final {
 
   std::span<move_t> generate_all_moves(const std::span<move_t, 256> buffer) const noexcept;
   std::span<move_t> generate_tactical_moves(const std::span<move_t, 256> buffer) const noexcept;
+  std::tuple<squares_t, squares_t> find_snipers_and_blockers(const side_t side) const noexcept;
 
   constexpr void do_move(const move_t move) noexcept;
   constexpr void undo_move(const move_t move) noexcept;
 
-  constexpr std::tuple<squares_t, squares_t> find_snipers_and_blockers(const side_t side) const noexcept;
 private:
   std::span<move_t> generate_moves(const squares_t filter, const squares_t pawn_filter,
                                  const std::span<move_t, 256> buffer) const noexcept;
