@@ -14,10 +14,9 @@ module;
 
 export module engine.transposition;
 
-import core.hashes.hash;
-// import types.score;
-import core.move;
+import types.hash;
 import types.score;
+import core.move;
 
 export namespace chess {
 

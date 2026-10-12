@@ -12,6 +12,7 @@ import engine.history;
 import engine.transposition;
 import core.position;
 import types.piece;
+import types.hash;
 
 bool test_tt_mate_scores() {
     using namespace chess;

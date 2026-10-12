@@ -9,6 +9,8 @@ export module core.position:impl.construct;
 import :decl;
 import :impl.query;
 import :impl.attack;
+import types.hash;
+import core.hashes.lookup;
 
 namespace chess {
 

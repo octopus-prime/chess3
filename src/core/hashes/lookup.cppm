@@ -1,4 +1,4 @@
-export module core.hashes.hash;
+export module core.hashes.lookup;
 
 export import :decl;
 import :impl;

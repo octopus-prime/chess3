@@ -7,13 +7,13 @@ module;
 
 export module core.position:decl;
 
+import types.hash;
 import types.square;
 import types.type;
 import types.piece;
 import types.side;
 import types.squares;
 import core.move;
-export import core.hashes.hash;
 
 export namespace chess {
 

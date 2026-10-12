@@ -9,10 +9,12 @@
 #include <tuple>
 #include "test_support.hpp"
 
+import types.hash;
 import types.squares;
 import types.piece;
 import core.move;
 import core.position;
+import core.hashes.lookup;
 
 using namespace chess;
 

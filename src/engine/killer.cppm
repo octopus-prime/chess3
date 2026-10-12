@@ -14,7 +14,7 @@ module;
 
 export module engine.killer;
 
-import core.hashes.hash;
+import core.hashes.lookup;
 import core.move;
 import types.score;
 

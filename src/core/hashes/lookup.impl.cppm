@@ -4,7 +4,7 @@ module;
 #include <array>
 #include <cstdint>
 
-export module core.hashes.hash:impl;
+export module core.hashes.lookup:impl;
 
 import :decl;
 
