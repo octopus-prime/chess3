@@ -67,7 +67,6 @@ constexpr bool position_t::tactical(const move_t move) const noexcept {
 }
 
 constexpr std::tuple<squares_t, squares_t> position_t::find_snipers_and_blockers(const side_t side) const noexcept {
-    using namespace attacks;
     using namespace attacks::lookup;
 
     const square_t ksq = by(side, K).front();
@@ -75,20 +74,18 @@ constexpr std::tuple<squares_t, squares_t> position_t::find_snipers_and_blockers
     squares_t snipers{};
     squares_t blockers{};
 
-    auto scan = [&](direction_e direction, squares_t candidates, auto&& find_nearest) {
-        const squares_t ray = lookup::ray(ksq, direction);
-        const squares_t sniper_candidates = ray & candidates;
-        if (!sniper_candidates.empty()) {
-            square_t sniper = std::invoke(find_nearest, sniper_candidates);
-            const squares_t line = lookup::line(ksq, sniper);
-            const squares_t between = line & by() & ~squares_t{ksq} & ~squares_t{sniper};
-            const squares_t blocker_candidates = between & by(side);
-            if (between.size() == 1 && blocker_candidates.size() == 1) {
-                square_t blocker = blocker_candidates.front();
-                snipers.set(sniper);
-                blockers.set(blocker);
-            }
-        }
+    auto scan = [&](const direction_e direction, const squares_t candidates, auto&& find_nearest) {
+        const squares_t sniper_candidates = ray(ksq, direction) & candidates;
+        if (sniper_candidates.empty())
+            return;
+        const square_t sniper = std::invoke(find_nearest, sniper_candidates);
+        const squares_t between = line(ksq, sniper) & by() & ~squares_t{ksq} & ~squares_t{sniper};
+        const squares_t blocker_candidates = between & by(side);
+        if (between.size() != 1 || blocker_candidates.empty())
+            return;
+        const square_t blocker = blocker_candidates.front();
+        snipers.set(sniper);
+        blockers.set(blocker);
     };
 
     scan(NORTH, by(~side, R, Q), &squares_t::front);
