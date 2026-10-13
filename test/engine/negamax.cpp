@@ -316,7 +316,7 @@ bool test_history_ordering() {
     return passed;
 }
 
-bool run_engine_tests() {
+bool run_negamax_tests() {
     bool passed = test_tt_mate_scores();
     passed &= test_lazy_move_ordering();
     passed &= test_phased_move_ordering();

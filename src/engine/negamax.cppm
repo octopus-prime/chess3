@@ -14,6 +14,7 @@ import core.position;
 import engine.transposition;
 import engine.killer;
 import engine.history;
+import engine.evaluator;
 
 export namespace chess {
 
@@ -27,12 +28,13 @@ struct negamax_t final {
 private:
     score_t search(ply_t depth, ply_t height, score_t alpha, score_t beta) noexcept;
     score_t qsearch(ply_t height, score_t alpha, score_t beta) noexcept;
-    score_t evaluate() const noexcept;
+    score_t evaluate() noexcept;
 
     position_t position;
     transposition_t transposition;
     killer_t killer;
     history_t history;
+    evaluator_t evaluator;
     size_t nodes_searched;
 };
 

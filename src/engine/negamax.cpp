@@ -112,7 +112,7 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
                 killer.put(move, height);
                 const int bonus = history_t::bonus(depth);
                 history.update(position.at(move.from()), move.to(), bonus);
-                for (const move_t previous : moves) {
+                for (const move_t& previous : moves) {
                     if (previous == move)
                         break;
                     if (!position.tactical(previous))
@@ -181,27 +181,28 @@ score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     return alpha;
 }
 
-score_t negamax_t::evaluate() const noexcept {
-    using namespace attacks::generator;
-    const side_t side = position.side();
-    score_t score{};
-    // score += KING * (position.by(side, K).empty() - position.by(~side, K).empty());
-    score += score_t{QUEEN} * (int(position.by(side, Q).size()) - int(position.by(~side, Q).size()));
-    score += score_t{ROOK} * (int(position.by(side, R).size()) - int(position.by(~side, R).size()));
-    score += score_t{BISHOP} * (int(position.by(side, B).size()) - int(position.by(~side, B).size()));
-    score += score_t{KNIGHT} * (int(position.by(side, N).size()) - int(position.by(~side, N).size()));
-    score += score_t{PAWN} * (int(position.by(side, P).size()) - int(position.by(~side, P).size()));
+score_t negamax_t::evaluate() noexcept {
+    return evaluator.evaluate(position);
+    // using namespace attacks::generator;
+    // const side_t side = position.side();
+    // score_t score{};
+    // // score += KING * (position.by(side, K).empty() - position.by(~side, K).empty());
+    // score += score_t{QUEEN} * (int(position.by(side, Q).size()) - int(position.by(~side, Q).size()));
+    // score += score_t{ROOK} * (int(position.by(side, R).size()) - int(position.by(~side, R).size()));
+    // score += score_t{BISHOP} * (int(position.by(side, B).size()) - int(position.by(~side, B).size()));
+    // score += score_t{KNIGHT} * (int(position.by(side, N).size()) - int(position.by(~side, N).size()));
+    // score += score_t{PAWN} * (int(position.by(side, P).size()) - int(position.by(~side, P).size()));
 
-    score += score_t{CP} * int(leapers(position.by(side, K), position.by(side, N)).size());
-    score -= score_t{CP} * int(leapers(position.by(~side, K), position.by(~side, N)).size());
+    // score += score_t{CP} * int(leapers(position.by(side, K), position.by(side, N)).size());
+    // score -= score_t{CP} * int(leapers(position.by(~side, K), position.by(~side, N)).size());
 
-    score += score_t{CP} * int(sliders(position.by(side, R, Q), position.by(side, B, Q), position.by()).size());
-    score -= score_t{CP} * int(sliders(position.by(~side, R, Q), position.by(~side, B, Q), position.by()).size());
+    // score += score_t{CP} * int(sliders(position.by(side, R, Q), position.by(side, B, Q), position.by()).size());
+    // score -= score_t{CP} * int(sliders(position.by(~side, R, Q), position.by(~side, B, Q), position.by()).size());
 
-    score += score_t{CP} * int(pawns(position.by(side, P), side).size());
-    score -= score_t{CP} * int(pawns(position.by(~side, P), ~side).size());
+    // score += score_t{CP} * int(pawns(position.by(side, P), side).size());
+    // score -= score_t{CP} * int(pawns(position.by(~side, P), ~side).size());
 
-    return score_t(score);
+    // return score_t(score);
 }
 
 } // namespace chess
