@@ -7,6 +7,9 @@ module;
 #include <span>
 #include <string_view>
 #include <ranges>
+#include <cmath>
+#include <iostream>
+#include <chrono>
 
 module engine.negamax;
 
@@ -17,10 +20,36 @@ import types.type;
 
 namespace chess {
 
+std::ostream& operator<<(std::ostream& os, const chess::square_t square) {
+    return os << char('a' + square.file()) << (char)('1' + square.rank());
+}
+
+std::ostream& operator<<(std::ostream& os, const chess::move_t move) {
+    return os << move.from() << move.to();
+}
+
 negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), killer(), history(), nodes_searched{} {}
 
-score_t negamax_t::operator()(ply_t depth) noexcept {
-    return search(depth, 0, MIN, MAX);
+score_t negamax_t::operator()(ply_t max_depth) noexcept {
+    using namespace std::chrono;
+    // return search(depth, 0, MIN, MAX);
+        std::array<chess::move_t, 256> buffer;
+    const auto start = steady_clock::now();
+    score_t score = qsearch(0, MIN, MAX);
+    for (chess::ply_t depth = 1; depth <= max_depth; ++depth) {
+        score = asearch(score, depth);
+        const auto end = steady_clock::now();
+        const auto ns = duration_cast<nanoseconds>(end - start).count();
+        const auto ms = duration_cast<milliseconds>(end - start).count();
+        const auto pv = extract_pv(buffer, depth);
+        const auto nodes = this->nodes();
+        const auto full = this->full();
+        std::cout << "depth: " << int{depth} << ", score: " << score << ", time: " << ms << " ms, nodes: " << nodes << " perf: " << nodes * 1e3 / ns << " MN/s, full: " << full << ", pv: ";
+        for (const auto& move : pv)
+            std::cout << move << " ";
+        std::cout << "\n";
+    }
+    return score;
 }
 
 size_t negamax_t::nodes() const noexcept {
@@ -197,6 +226,22 @@ score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     }
 
     return alpha;
+}
+
+score_t negamax_t::asearch(const score_t eval, const ply_t depth) noexcept {
+    const score_t delta = score_e(25 + 2 * depth);
+    score_t window_alpha = eval - delta;
+    score_t window_beta = eval + delta;
+
+    score_t score = search(depth, 0, window_alpha, window_beta);
+    // if (score == 32100)
+    //     return 32100;
+    if (score <= window_alpha) {
+        score = search(depth, 0, MIN, window_beta);
+    } else if (score >= window_beta) {
+        score = search(depth, 0, window_alpha, MAX);
+    }
+    return score;
 }
 
 score_t negamax_t::evaluate() noexcept {
