@@ -96,7 +96,14 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
 
     for (const move_t& move : ordered) {
         position.do_move(move);
-        const score_t score = -search(depth - 1, height + 1, -beta, -alpha);
+        score_t score;
+        if (alpha > original_alpha) {
+            score = -search(depth - 1, height + 1, score_e(-alpha - 1), -alpha);
+            if (score > alpha)
+                score = -search(depth - 1, height + 1, -beta, -alpha);
+        } else {
+            score = -search(depth - 1, height + 1, -beta, -alpha);
+        }
         position.undo_move(move);
 
         if (score >= beta) {
