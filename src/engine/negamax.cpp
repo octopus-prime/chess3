@@ -17,7 +17,7 @@ import types.type;
 
 namespace chess {
 
-negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(96), killer(), history(), nodes_searched{} {}
+negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), killer(), history(), nodes_searched{} {}
 
 score_t negamax_t::operator()(ply_t depth) noexcept {
     return search(depth, 0, MIN, MAX);
@@ -85,14 +85,13 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
         return position.checkers() ? score_e(MIN + height) : DRAW;
 
     const auto get_score = [&](const move_t& move) {
-        const score_t win = score_t(position.at(move.to()).type()) + score_t(move.promotion());
-        const score_t loss = score_t(position.at(move.from()).type()) / 100;
-        return win - loss;
+        return position.see(move);
     };
     const auto get_history_score = [&](const move_t move) {
         return history.get(position.at(move.from()), move.to());
     };
-    auto ordered = detail::ordered_moves(position, moves, best_move, killer.get(height), get_score, get_history_score);
+    // auto ordered = detail::ordered_moves(position, moves, best_move, killer.get(height), get_score, get_history_score);
+    auto ordered = detail::ordered_moves(position, moves, best_move, killer.get(height), history);
 
     for (const move_t& move : ordered) {
         position.do_move(move);
@@ -160,12 +159,9 @@ score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     if (in_check && moves.empty())
         return score_e(MIN + height);
 
-    const auto get_score = [&](const move_t& move) {
-        const score_t win = score_t(position.at(move.to()).type()) + score_t(move.promotion());
-        const score_t loss = score_t(position.at(move.from()).type()) / 100;
-        return win - loss;
-    };
-    std::ranges::sort(moves, std::greater<>(), get_score);
+    std::ranges::sort(moves, std::greater<>(), [&](const move_t& move) {
+        return position.see(move);
+    });
 
     for (const move_t& move : moves) {
         position.do_move(move);

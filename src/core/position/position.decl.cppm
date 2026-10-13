@@ -13,6 +13,7 @@ import types.type;
 import types.piece;
 import types.side;
 import types.squares;
+import types.score;
 import core.move;
 
 export namespace chess {
@@ -53,6 +54,7 @@ struct position_t final {
   constexpr squares_t attacked_by(const side_t side) const noexcept;
   constexpr squares_t attackers_of(const square_t square) const noexcept;
   constexpr bool tactical(const move_t move) const noexcept;
+  constexpr score_t see(const move_t move) const noexcept;
 
   std::span<move_t> generate_all_moves(const std::span<move_t, 256> buffer) const noexcept;
   std::span<move_t> generate_tactical_moves(const std::span<move_t, 256> buffer) const noexcept;
