@@ -25,7 +25,7 @@ evaluator_t::evaluator_t() : _nnue(std::make_unique<nnue::nnue_t>("../nnue.bin")
 score_t evaluator_t::evaluate(const position_t& position) noexcept {
     const nnue::entry_t& t = refresh(position, position.side());
     const nnue::entry_t& o = refresh(position, ~position.side());
-    return score_e(_nnue->evaluate(t, o, position.by().size()) / 4 * 4);
+    return score_e(_nnue->evaluate(t, o, position.by().size()));// / 4 * 4);
 }
 
 const nnue::entry_t& evaluator_t::refresh(const position_t& position, const side_e side) noexcept {

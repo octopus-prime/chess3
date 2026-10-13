@@ -313,4 +313,3 @@ interface. LTO remains enabled across library and application boundaries.
 ## License
 
 This project is licensed under the [GNU General Public License Version 3](LICENSE).
-

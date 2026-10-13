@@ -17,7 +17,7 @@ import types.type;
 
 namespace chess {
 
-negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(96), killer(), history(), nodes_searched{} {}
+negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), killer(), history(), nodes_searched{} {}
 
 score_t negamax_t::operator()(ply_t depth) noexcept {
     return search(depth, 0, MIN, MAX);
@@ -84,6 +84,19 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
     if (moves.empty())
         return position.checkers() ? score_e(MIN + height) : DRAW;
 
+    const bool is_pv = (beta - alpha) > 1;
+    // Futility pruning
+    {
+        const auto margin = depth * (100 + 25 * (best_move != move_t{}));
+        if (!is_pv && position.checkers().empty() && depth < 8 && !alpha.decisive() && !beta.decisive() && evaluate() - margin >= beta)
+            return beta;
+    }
+
+    if (!is_pv && position.checkers().empty() && depth >= 7 && best_move == move_t{} && !alpha.decisive() && !beta.decisive())
+        depth--;
+    if (is_pv && !position.checkers().empty())
+        depth++;
+
     const auto get_score = [&](const move_t& move) {
         const score_t win = score_t(position.at(move.to()).type()) + score_t(move.promotion());
         const score_t loss = score_t(position.at(move.from()).type()) / 100;
@@ -94,12 +107,17 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
     };
     auto ordered = detail::ordered_moves(position, moves, best_move, killer.get(height), get_score, get_history_score);
 
+    size_t move_count = 0;
     for (const move_t& move : ordered) {
+        ++move_count;
+        bool is_tactical = position.tactical(move);
         position.do_move(move);
         score_t score;
         if (alpha > original_alpha) {
-            score = -search(depth - 1, height + 1, score_e(-alpha - 1), -alpha);
-            if (score > alpha)
+            int R = depth > 3 && move_count > 3 && !is_tactical ? int(std::logf(depth-3) * std::logf(move_count-3)) : 0;
+            R = std::clamp(R, 0, depth - 2);
+            score = -search(depth - 1 - R, height + 1, score_e(-alpha - 1), -alpha);
+            if (score > alpha)// && is_pv)
                 score = -search(depth - 1, height + 1, -beta, -alpha);
         } else {
             score = -search(depth - 1, height + 1, -beta, -alpha);
