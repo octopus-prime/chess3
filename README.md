@@ -260,6 +260,20 @@ directly, use `./build/chess_types_tests` for Types,
 CTest labels `types`, `core`, and `engine` group tests by library.
 Set `BUILD_TESTING=OFF` to omit all three test targets.
 
+## NNUE network
+
+The NNUE evaluation network is compressed as `nnue.bin.xz`. Before running `demo`,
+`nnue_demo`, or the NNUE/evaluator test suites, decompress `nnue.bin.xz` to obtain `nnue.bin`.
+
+### How to extract
+
+- **Windows (with 7-Zip):**
+  Right-click `nnue.bin.xz` $\rightarrow$ **7-Zip** $\rightarrow$ **Extract Here**.
+- **Linux / macOS:**
+  ```sh
+  xz -dk nnue.bin.xz
+  ```
+
 ## Build and run
 
 Requires CMake 3.28 or newer, Ninja, and a compiler supported by CMake's module
