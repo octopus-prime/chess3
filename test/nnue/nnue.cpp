@@ -11,7 +11,7 @@ import types.piece;
 using namespace chess;
 
 bool run_nnue_tests() {
-    const auto nnue = nnue::nnue_t::load();
+    const auto nnue = nnue::load();
 
     nnue::entry_t entry[2];
     nnue->initialize(entry[WHITE]);

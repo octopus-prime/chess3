@@ -31,8 +31,6 @@ struct entry_t final {
 };
 
 struct nnue_t final {
-    static std::unique_ptr<nnue_t> load();
-
     void initialize(entry_t& entry) const noexcept;
     void update(entry_t& entry, const std::span<const uint16_t> removed_features, const std::span<const uint16_t> added_features) const noexcept;
 
@@ -60,6 +58,10 @@ private:
 
     feature_layer_t feature_layer;
     hidden_layer_t hidden_layers[SLOTS];
+
+    friend std::unique_ptr<nnue_t> load();
 };
+
+std::unique_ptr<nnue_t> load();
 
 }

@@ -15,7 +15,7 @@ import nnue.nnue;
 
 namespace chess {
 
-evaluator_t::evaluator_t() : _nnue(nnue::nnue_t::load()), _entries{} {
+evaluator_t::evaluator_t() : _nnue(nnue::load()), _entries{} {
     for (const side_e side : {WHITE, BLACK})
         for (nnue::entry_t& entry : _entries[side])
             _nnue->initialize(entry);

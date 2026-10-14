@@ -182,7 +182,7 @@ void affine_tranform(const std::span<const uint8_t, L3> input, const std::span<c
     output[0] = biases[0] + __builtin_reduce_add((__v8si) sum);
 }
 
-std::unique_ptr<nnue_t> nnue_t::load() {
+std::unique_ptr<nnue_t> load() {
     return std::unique_ptr<nnue_t>(new nnue_t("../nnue.bin"));
 }
 
