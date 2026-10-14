@@ -40,8 +40,8 @@ list(REMOVE_ITEM nnue_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/nnue/main.cpp")
 # add_link_options(-fprofile-use=foo)
 
 add_library(chess_types STATIC)
-target_compile_features(chess_types PUBLIC cxx_std_26)
-target_compile_options(chess_types PUBLIC -march=native -fconstexpr-steps=500000000 -Wno-c23-extensions)
+target_compile_features(chess_types PUBLIC cxx_std_23)
+target_compile_options(chess_types PUBLIC -march=native -fconstexpr-steps=500000000)
 target_sources(chess_types PUBLIC FILE_SET CXX_MODULES FILES ${types_modules})
 
 add_library(chess_core STATIC)
