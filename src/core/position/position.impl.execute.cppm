@@ -112,7 +112,7 @@ constexpr void position_t::do_move(const move_t move) noexcept {
     }
     _hash ^= hashes::lookup::side();
     _side = ~_side;
-    _checkers = attackers(by(_side, K).front()) & by(~_side);
+    _checkers = attackers_of(by(_side, K).front()) & by(~_side);
 }
 
 constexpr void position_t::undo_move(const move_t move) noexcept {

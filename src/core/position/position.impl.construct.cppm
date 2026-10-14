@@ -90,7 +90,7 @@ constexpr position_t::position_t(const std::string_view fen) noexcept :
     for (const square_t square : en_passant())
         _hash ^= hashes::lookup::ep(square.file());
 
-    _checkers = attackers(by(_side, K).front()) & by(~_side);
+    _checkers = attackers_of(by(_side, K).front()) & by(~_side);
 }
 
 constexpr position_t::stack_t::stack_t() noexcept : _data{}, _size{} {}

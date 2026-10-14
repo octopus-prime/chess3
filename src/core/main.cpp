@@ -1,15 +1,14 @@
 #include <array>
 #include <chrono>
-#include <cstddef>
 #include <iostream>
-#include <span>
 #include <string_view>
 
 import types.ply;
 import core.perft;
 
-void test_perft(std::string_view fen, size_t max_depth) {
-    using namespace chess;
+using namespace chess;
+
+void test_perft(std::string_view fen, ply_t max_depth) {
     using namespace std::chrono;
     perft_t perft{fen};
     for (ply_t depth = 1; depth <= max_depth; ++depth) {
@@ -18,7 +17,7 @@ void test_perft(std::string_view fen, size_t max_depth) {
         const auto end = steady_clock::now();
         const auto ns = duration_cast<nanoseconds>(end - start).count();
         const auto ms = duration_cast<milliseconds>(end - start).count();
-        std::cout << "perft(" << depth << "): " << nodes << ", time: " << ms << " ms, perf: " << nodes * 1e3 / ns << " MN/s\n";
+        std::cout << "perft(" << int(depth) << "): " << nodes << ", time: " << ms << " ms, perf: " << nodes * 1e3 / ns << " MN/s\n";
     }
 }
 
@@ -34,10 +33,10 @@ int main() {
         "n1N3br/2p1Bpkr/1pP2R1b/pP1p1PpR/Pp4P1/1P6/1K1P4/8 w - -", // mate in 6
         "r3k3/1pp1p1Kp/1p2P3/1p6/2N5/P2P2pr/5B1p/3Q1R2 w q -" // mate in 8
     };
-    constexpr chess::ply_t depth = 6;
+    constexpr ply_t max_depth = 6;
     for (const std::string_view fen : fens) {
         std::cout << "FEN: " << fen << "\n";
-        test_perft(fen, depth);
+        test_perft(fen, max_depth);
         std::cout << "\n";
     }
 }

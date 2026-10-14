@@ -15,7 +15,6 @@ constexpr hash_t splitmix64(uint64_t &state) noexcept {
   uint64_t z = (state += 0x9E3779B97F4A7C15ull);
   z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ull;
   z = (z ^ (z >> 27)) * 0x94D049BB133111EBull;
-//   state = (state ^ (state >> 31)) * 0xD6E8FEB86659FD93ull;
   return z ^ (z >> 31);
 }
 

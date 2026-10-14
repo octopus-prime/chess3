@@ -1,6 +1,5 @@
 #include <array>
 #include <chrono>
-#include <cstddef>
 #include <iostream>
 #include <span>
 #include <string_view>
@@ -48,7 +47,7 @@ int main() {
         "n1N3br/2p1Bpkr/1pP2R1b/pP1p1PpR/Pp4P1/1P6/1K1P4/8 w - -", // mate in 6
         "r3k3/1pp1p1Kp/1p2P3/1p6/2N5/P2P2pr/5B1p/3Q1R2 w q -" // mate in 8
     };
-    constexpr chess::ply_t depth = 12;
+    constexpr chess::ply_t depth = 10;
     for (const std::string_view fen : fens) {
         std::cout << "FEN: " << fen << "\n";
         test_negamax(fen, depth);

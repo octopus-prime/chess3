@@ -13,6 +13,7 @@ import types.type;
 import types.piece;
 import types.side;
 import types.squares;
+import types.score;
 import core.move;
 
 export namespace chess {
@@ -50,17 +51,20 @@ struct position_t final {
   constexpr squares_t checkers() const noexcept;
   constexpr squares_t en_passant() const noexcept;
   constexpr squares_t castling() const noexcept;
-  constexpr squares_t attackers(const side_t side) const noexcept;
-  constexpr squares_t attackers(const square_t square) const noexcept;
+  constexpr squares_t attacked_by(const side_t side) const noexcept;
+  constexpr squares_t attackers_of(const square_t square) const noexcept;
+  constexpr bool check() const noexcept;
+  constexpr bool check(const move_t move) const noexcept;
   constexpr bool tactical(const move_t move) const noexcept;
+  constexpr score_t see(const move_t move) const noexcept;
 
   std::span<move_t> generate_all_moves(const std::span<move_t, 256> buffer) const noexcept;
   std::span<move_t> generate_tactical_moves(const std::span<move_t, 256> buffer) const noexcept;
+  std::tuple<squares_t, squares_t> find_snipers_and_blockers(const side_t side) const noexcept;
 
   constexpr void do_move(const move_t move) noexcept;
   constexpr void undo_move(const move_t move) noexcept;
 
-  constexpr std::tuple<squares_t, squares_t> find_snipers_and_blockers(const side_t side) const noexcept;
 private:
   std::span<move_t> generate_moves(const squares_t filter, const squares_t pawn_filter,
                                  const std::span<move_t, 256> buffer) const noexcept;

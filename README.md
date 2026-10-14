@@ -1,20 +1,24 @@
 # Chess
 
-A C++23 project using C++ modules, split into three static libraries and two applications:
+A C++26 project using C++ modules, split into four static libraries and three applications:
 
 - `chess_types`: coordinate, square-set, piece, side, type, and score modules;
   independent of Core and Engine.
 - `chess_core`: positions, moves, attacks, hashes, and perft; links publicly
   to `chess_types`.
   [core/main.cpp](src/core/main.cpp) builds the standalone `perft` benchmark.
+- `chess_nnue`: NNUE network loading; links publicly to `chess_core`.
+  [nnue/main.cpp](src/nnue/main.cpp) builds `nnue_demo`, which loads `nnue.bin`
+  from the working directory or a network file passed as its first argument.
 - `chess_engine`: negamax, history, killers, and the transposition table; links
-  publicly to `chess_core`. [engine/main.cpp](src/engine/main.cpp) builds `demo`.
-- With `BUILD_TESTING`, `chess_types_tests`, `chess_core_tests`, and
-  `chess_engine_tests` link to their respective libraries. Dependencies flow
-  only from Types to Core to Engine through public links.
+  publicly to `chess_core` and `chess_nnue`.
+  [engine/main.cpp](src/engine/main.cpp) builds `demo`.
+- With `BUILD_TESTING`, `chess_types_tests`, `chess_core_tests`,
+  `chess_nnue_tests`, and `chess_engine_tests` link to their respective libraries.
+  Dependencies flow from Types to Core and NNUE to Engine through public links.
 
-CMake discovers modules under `src/types/`, `src/core/`, and `src/engine/`,
-excluding application entry points from libraries.
+CMake discovers modules under `src/types/`, `src/core/`, `src/nnue/`, and
+`src/engine/`, excluding application entry points from libraries.
 Adding or removing matching files triggers CMake reconfiguration during builds.
 
 Module names use `types.*`, `core.*`, and `engine.*`. Attack and hash imports are
@@ -256,6 +260,20 @@ directly, use `./build/chess_types_tests` for Types,
 CTest labels `types`, `core`, and `engine` group tests by library.
 Set `BUILD_TESTING=OFF` to omit all three test targets.
 
+## NNUE network
+
+The NNUE evaluation network is compressed as `nnue.bin.xz`. Before running `demo`,
+`nnue_demo`, or the NNUE/evaluator test suites, decompress `nnue.bin.xz` to obtain `nnue.bin`.
+
+### How to extract
+
+- **Windows (with 7-Zip):**
+  Right-click `nnue.bin.xz` $\rightarrow$ **7-Zip** $\rightarrow$ **Extract Here**.
+- **Linux / macOS:**
+  ```sh
+  xz -dk nnue.bin.xz
+  ```
+
 ## Build and run
 
 Requires CMake 3.28 or newer, Ninja, and a compiler supported by CMake's module
@@ -291,3 +309,8 @@ interfaces; runtime method definitions live in matching `.cpp` implementation
 units. The lazy ordering template lives in `engine.ordering`, imported by
 Negamax's implementation and the focused ordering tests, not by its public
 interface. LTO remains enabled across library and application boundaries.
+
+## License
+
+This project is licensed under the [GNU General Public License Version 3](LICENSE).
+

@@ -1,16 +1,10 @@
 module;
 
-#include <array>
-#include <span>
 #include <cstddef>
-
 #include <cstdint>
 #include <vector>
 #include <optional>
-#include <algorithm>
 #include <tuple>
-#include <type_traits>
-#include <ranges>
 
 export module engine.transposition;
 

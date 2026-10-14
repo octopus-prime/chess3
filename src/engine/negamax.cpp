@@ -4,10 +4,9 @@ module;
 #include <array>
 #include <cstddef>
 #include <functional>
-#include <limits>
-#include <ranges>
 #include <span>
 #include <string_view>
+#include <ranges>
 
 module engine.negamax;
 
@@ -18,7 +17,7 @@ import types.type;
 
 namespace chess {
 
-negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(96), killer(), history(), nodes_searched{} {}
+negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), killer(), history(), nodes_searched{} {}
 
 score_t negamax_t::operator()(ply_t depth) noexcept {
     return search(depth, 0, MIN, MAX);
@@ -86,18 +85,24 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
         return position.checkers() ? score_e(MIN + height) : DRAW;
 
     const auto get_score = [&](const move_t& move) {
-        const score_t win = score_t(position.at(move.to()).type()) + score_t(move.promotion());
-        const score_t loss = score_t(position.at(move.from()).type()) / 100;
-        return win - loss;
+        return position.see(move);
     };
     const auto get_history_score = [&](const move_t move) {
         return history.get(position.at(move.from()), move.to());
     };
-    auto ordered = detail::ordered_moves(position, moves, best_move, killer.get(height), get_score, get_history_score);
+    // auto ordered = detail::ordered_moves(position, moves, best_move, killer.get(height), get_score, get_history_score);
+    auto ordered = detail::ordered_moves(position, moves, best_move, killer.get(height), history);
 
     for (const move_t& move : ordered) {
         position.do_move(move);
-        const score_t score = -search(depth - 1, height + 1, -beta, -alpha);
+        score_t score;
+        if (alpha > original_alpha) {
+            score = -search(depth - 1, height + 1, score_e(-alpha - 1), -alpha);
+            if (score > alpha)
+                score = -search(depth - 1, height + 1, -beta, -alpha);
+        } else {
+            score = -search(depth - 1, height + 1, -beta, -alpha);
+        }
         position.undo_move(move);
 
         if (score >= beta) {
@@ -106,7 +111,7 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
                 killer.put(move, height);
                 const int bonus = history_t::bonus(depth);
                 history.update(position.at(move.from()), move.to(), bonus);
-                for (const move_t previous : moves) {
+                for (const move_t& previous : moves) {
                     if (previous == move)
                         break;
                     if (!position.tactical(previous))
@@ -147,19 +152,23 @@ score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     }
 
     std::array<move_t, 256> buffer;
-    const std::span<move_t> moves = in_check
+    std::span<move_t> moves = in_check
         ? position.generate_all_moves(buffer)
         : position.generate_tactical_moves(buffer);
 
     if (in_check && moves.empty())
         return score_e(MIN + height);
 
-    const auto get_score = [&](const move_t& move) {
-        const score_t win = score_t(position.at(move.to()).type()) + score_t(move.promotion());
-        const score_t loss = score_t(position.at(move.from()).type()) / 100;
-        return win - loss;
-    };
-    std::ranges::sort(moves, std::greater<>(), get_score);
+    if (!in_check) {
+        auto tail = std::ranges::partition(moves, [&](const move_t& move) {
+            return move.promotion() != NO_TYPE || position.check(move) || position.see(move) >= 0;
+        });
+        moves = moves.first(tail.begin() - moves.begin());
+    }
+
+    std::ranges::sort(moves, std::greater<>(), [&](const move_t& move) {
+        return position.see(move);
+    });
 
     for (const move_t& move : moves) {
         position.do_move(move);
@@ -175,27 +184,28 @@ score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     return alpha;
 }
 
-score_t negamax_t::evaluate() const noexcept {
-    using namespace attacks::generator;
-    const side_t side = position.side();
-    score_t score{};
-    // score += KING * (position.by(side, K).empty() - position.by(~side, K).empty());
-    score += score_t{QUEEN} * (int(position.by(side, Q).size()) - int(position.by(~side, Q).size()));
-    score += score_t{ROOK} * (int(position.by(side, R).size()) - int(position.by(~side, R).size()));
-    score += score_t{BISHOP} * (int(position.by(side, B).size()) - int(position.by(~side, B).size()));
-    score += score_t{KNIGHT} * (int(position.by(side, N).size()) - int(position.by(~side, N).size()));
-    score += score_t{PAWN} * (int(position.by(side, P).size()) - int(position.by(~side, P).size()));
+score_t negamax_t::evaluate() noexcept {
+    return evaluator.evaluate(position);
+    // using namespace attacks::generator;
+    // const side_t side = position.side();
+    // score_t score{};
+    // // score += KING * (position.by(side, K).empty() - position.by(~side, K).empty());
+    // score += score_t{QUEEN} * (int(position.by(side, Q).size()) - int(position.by(~side, Q).size()));
+    // score += score_t{ROOK} * (int(position.by(side, R).size()) - int(position.by(~side, R).size()));
+    // score += score_t{BISHOP} * (int(position.by(side, B).size()) - int(position.by(~side, B).size()));
+    // score += score_t{KNIGHT} * (int(position.by(side, N).size()) - int(position.by(~side, N).size()));
+    // score += score_t{PAWN} * (int(position.by(side, P).size()) - int(position.by(~side, P).size()));
 
-    score += score_t{CP} * int(leapers(position.by(side, K), position.by(side, N)).size());
-    score -= score_t{CP} * int(leapers(position.by(~side, K), position.by(~side, N)).size());
+    // score += score_t{CP} * int(leapers(position.by(side, K), position.by(side, N)).size());
+    // score -= score_t{CP} * int(leapers(position.by(~side, K), position.by(~side, N)).size());
 
-    score += score_t{CP} * int(sliders(position.by(side, R, Q), position.by(side, B, Q), position.by()).size());
-    score -= score_t{CP} * int(sliders(position.by(~side, R, Q), position.by(~side, B, Q), position.by()).size());
+    // score += score_t{CP} * int(sliders(position.by(side, R, Q), position.by(side, B, Q), position.by()).size());
+    // score -= score_t{CP} * int(sliders(position.by(~side, R, Q), position.by(~side, B, Q), position.by()).size());
 
-    score += score_t{CP} * int(pawns(position.by(side, P), side).size());
-    score -= score_t{CP} * int(pawns(position.by(~side, P), ~side).size());
+    // score += score_t{CP} * int(pawns(position.by(side, P), side).size());
+    // score -= score_t{CP} * int(pawns(position.by(~side, P), ~side).size());
 
-    return score_t(score);
+    // return score_t(score);
 }
 
 } // namespace chess

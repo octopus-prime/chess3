@@ -23,6 +23,13 @@ file(GLOB_RECURSE engine_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/engine/*.cpp"
 )
 list(REMOVE_ITEM engine_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/engine/main.cpp")
+file(GLOB_RECURSE nnue_modules CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/nnue/*.cppm"
+)
+file(GLOB_RECURSE nnue_sources CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/nnue/*.cpp"
+)
+list(REMOVE_ITEM nnue_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/nnue/main.cpp")
 
 # add_compile_options(-fprofile-generate)
 # add_link_options(-fprofile-generate)
@@ -33,8 +40,8 @@ list(REMOVE_ITEM engine_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/engine/main.cpp
 # add_link_options(-fprofile-use=foo)
 
 add_library(chess_types STATIC)
-target_compile_features(chess_types PUBLIC cxx_std_23)
-target_compile_options(chess_types PUBLIC -march=native -fconstexpr-steps=500000000)
+target_compile_features(chess_types PUBLIC cxx_std_26)
+target_compile_options(chess_types PUBLIC -march=native -fconstexpr-steps=500000000 -Wno-c23-extensions)
 target_sources(chess_types PUBLIC FILE_SET CXX_MODULES FILES ${types_modules})
 
 add_library(chess_core STATIC)
@@ -44,8 +51,16 @@ target_sources(chess_core
     PRIVATE ${core_sources}
 )
 
+add_library(chess_nnue STATIC)
+target_link_libraries(chess_nnue PUBLIC chess_core)
+target_sources(chess_nnue
+    PUBLIC FILE_SET CXX_MODULES FILES ${nnue_modules}
+    PRIVATE ${nnue_sources}
+)
+
 add_library(chess_engine STATIC)
-target_link_libraries(chess_engine PUBLIC chess_core)
+target_link_libraries(chess_engine PUBLIC chess_core chess_nnue)
+add_dependencies(chess_engine chess_nnue)
 target_sources(chess_engine
     PUBLIC FILE_SET CXX_MODULES FILES ${engine_modules}
     PRIVATE ${engine_sources}
@@ -53,6 +68,9 @@ target_sources(chess_engine
 
 add_executable(perft src/core/main.cpp)
 target_link_libraries(perft PRIVATE chess_core)
+
+add_executable(nnue_demo src/nnue/main.cpp)
+target_link_libraries(nnue_demo PRIVATE chess_nnue)
 
 add_executable(demo src/engine/main.cpp)
 target_link_libraries(demo PRIVATE chess_engine)
@@ -76,9 +94,23 @@ if(BUILD_TESTING)
         add_test(NAME chess.${suite} COMMAND chess_core_tests ${suite})
         set_tests_properties(chess.${suite} PROPERTIES LABELS core)
     endforeach()
-    add_executable(chess_engine_tests test/engine/main.cpp test/engine/negamax.cpp)
+    add_executable(chess_nnue_tests test/nnue/main.cpp test/nnue/nnue.cpp)
+    target_include_directories(chess_nnue_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/test")
+    target_link_libraries(chess_nnue_tests PRIVATE chess_nnue)
+    add_test(NAME chess.nnue COMMAND chess_nnue_tests)
+    set_tests_properties(chess.nnue PROPERTIES LABELS nnue)
+
+    add_executable(chess_engine_tests
+        test/engine/main.cpp
+        test/engine/negamax.cpp
+        test/engine/evaluator.cpp
+    )
     target_include_directories(chess_engine_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/test")
     target_link_libraries(chess_engine_tests PRIVATE chess_engine)
+    foreach(suite IN ITEMS negamax evaluator)
+        add_test(NAME chess.${suite} COMMAND chess_engine_tests ${suite})
+        set_tests_properties(chess.${suite} PROPERTIES LABELS engine)
+    endforeach()
     add_test(NAME chess.engine COMMAND chess_engine_tests)
     set_tests_properties(chess.types PROPERTIES LABELS types)
     set_tests_properties(chess.engine PROPERTIES LABELS engine)
