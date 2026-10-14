@@ -1,6 +1,7 @@
 module;
 
 #include <array>
+#include <cstdint>
 #include <span>
 #include <string_view>
 #include <tuple>
@@ -25,6 +26,8 @@ struct position_t final {
     hash_t hash;
     piece_t captured;
     square_t captured_square;
+    uint8_t halfmove;
+    uint8_t repetition;
   };
   struct stack_t final {
     constexpr stack_t() noexcept;
@@ -32,6 +35,7 @@ struct position_t final {
     constexpr void push(const state_t& state) noexcept;
     constexpr void pop() noexcept;
     constexpr const state_t& top() const noexcept;
+    constexpr std::span<const state_t> data() const noexcept;
   private:
       std::array<state_t, 1024> _data;
       size_t _size;
@@ -57,6 +61,9 @@ struct position_t final {
   constexpr bool check(const move_t move) const noexcept;
   constexpr bool tactical(const move_t move) const noexcept;
   constexpr score_t see(const move_t move) const noexcept;
+  constexpr bool threefold_repetition() const noexcept;
+  constexpr bool fifty_move_rule() const noexcept;
+  constexpr bool insufficient_material() const noexcept;
 
   std::span<move_t> generate_all_moves(const std::span<move_t, 256> buffer) const noexcept;
   std::span<move_t> generate_tactical_moves(const std::span<move_t, 256> buffer) const noexcept;
@@ -66,6 +73,7 @@ struct position_t final {
   constexpr void undo_move(const move_t move) noexcept;
 
 private:
+  constexpr uint8_t find_repetitions(const hash_t hash, const uint8_t halfmove) const noexcept;
   std::span<move_t> generate_moves(const squares_t filter, const squares_t pawn_filter,
                                  const std::span<move_t, 256> buffer) const noexcept;
 
@@ -74,8 +82,10 @@ private:
   std::array<squares_t, MAX_SIDE> _occupied_by_side;
   squares_t _checkers;
   squares_t _special; // castle and ep
-  side_t _side;
   hash_t _hash;
+  side_t _side;
+  uint8_t _halfmove;
+  uint8_t _repetition;
   stack_t _stack;
 };
 

@@ -1,6 +1,8 @@
 module;
 
 #include <cassert>
+#include <cstdint>
+#include <limits>
 
 export module core.position:impl.execute;
 
@@ -59,7 +61,13 @@ constexpr void position_t::do_move(const move_t move) noexcept {
         assert(_checkers.empty());
     }
 
-    _stack.push(state_t{_checkers, _special, _hash, captured, captured_square});
+    _stack.push(state_t{_checkers, _special, _hash, captured, captured_square,
+                       _halfmove, _repetition});
+
+    if (piece.type() == P || captured != NO_PIECE)
+        _halfmove = 0;
+    else if (_halfmove < std::numeric_limits<uint8_t>::max())
+        ++_halfmove;
 
     const squares_t source{from};
     const squares_t target{to};
@@ -113,6 +121,7 @@ constexpr void position_t::do_move(const move_t move) noexcept {
     _hash ^= hashes::lookup::side();
     _side = ~_side;
     _checkers = attackers_of(by(_side, K).front()) & by(~_side);
+    _repetition = 1 + find_repetitions(_hash, _halfmove);
 }
 
 constexpr void position_t::undo_move(const move_t move) noexcept {
@@ -170,6 +179,8 @@ constexpr void position_t::undo_move(const move_t move) noexcept {
     _checkers = state.checkers;
     _special = state.special;
     _hash = state.hash;
+    _halfmove = state.halfmove;
+    _repetition = state.repetition;
     _stack.pop();
 }
 

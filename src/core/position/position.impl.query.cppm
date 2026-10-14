@@ -1,5 +1,8 @@
 module;
 
+#include <cstdint>
+#include <span>
+
 export module core.position:impl.query;
 
 import :decl;
@@ -67,4 +70,43 @@ constexpr bool position_t::tactical(const move_t move) const noexcept {
     return move.promotion() != NO_TYPE || at(move.to()).type() != NO_TYPE || (at(move.from()).type() == P && en_passant()[move.to()]);
 }
 
+constexpr bool position_t::fifty_move_rule() const noexcept {
+    return _halfmove >= 100;
+}
+
+constexpr bool position_t::threefold_repetition() const noexcept {
+    return _repetition >= 3;
+}
+
+constexpr bool position_t::insufficient_material() const noexcept {
+    return (by(P) | by(R, Q)).empty() && by(WHITE, N, B).size() <= 1 && by(BLACK, N, B).size() <= 1;
+    // if (!(by(P) | by(R, Q)).empty())
+    //     return false;
+
+    // const squares_t bishops = by(B);
+    // const squares_t knights = by(N);
+    // if ((bishops | knights).size() <= 1)
+    //     return true;
+    // if (!knights.empty())
+    //     return false;
+
+    // const square_t first = bishops.front();
+    // const int color = (int(first.file()) + int(first.rank())) & 1;
+    // for (const square_t square : bishops)
+    //     if (((int(square.file()) + int(square.rank())) & 1) != color)
+    //         return false;
+    // return true;
+}
+
+constexpr uint8_t position_t::find_repetitions(const hash_t hash, const uint8_t halfmove) const noexcept {
+    const std::span<const state_t> states = _stack.data();
+    int s = states.size();
+    int limit = std::max(0, s - halfmove);
+    for (int i = s - 2; i >= limit; i -= 2) {
+        if (states[i].hash == hash)
+            return states[i].repetition;
+    }
+    return 0;
+}
+    
 } // namespace chess

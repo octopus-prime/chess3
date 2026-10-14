@@ -316,6 +316,61 @@ bool test_history_ordering() {
     return passed;
 }
 
+bool test_search_draws() {
+    using namespace chess;
+    struct case_t {
+        std::string_view fen;
+        std::string_view description;
+    };
+    constexpr std::array cases{
+        case_t{"4k3/8/8/8/8/8/8/4K3 w - - 0 1", "bare kings draw"},
+        case_t{"4k3/8/8/8/8/8/8/2B1K3 w - - 0 1", "single bishop draw"},
+        case_t{"4k1n1/8/8/8/8/8/8/4K3 b - - 0 1", "single knight draw"},
+        case_t{"4k1n1/8/8/8/8/8/8/2B1K3 w - - 0 1",
+               "one minor per side draws under current material heuristic"},
+        case_t{"4k3/8/8/8/8/8/8/R3K3 w - - 100 1", "50-move draw for stronger side"},
+        case_t{"4k3/8/8/8/8/8/8/R3K3 b - - 100 1", "50-move draw for weaker side"},
+        case_t{"4k3/8/8/8/8/8/8/R3K3 w - - 101 1", "50-move draw above threshold"},
+        case_t{"k3R3/8/8/8/8/8/8/4K3 b - - 100 1",
+               "50-move draw in check with legal evasions"}
+    };
+    bool passed = true;
+    for (const auto& test : cases) {
+        negamax_t search{test.fen};
+        for (const ply_t depth : {ply_t{0}, ply_t{1}, ply_t{3}}) {
+            passed &= test_support::check(search(depth) == DRAW, test.description);
+            std::array<move_t, MAX_PLY> buffer;
+            passed &= test_support::check(search.extract_pv(buffer, 3).empty(),
+                                          "immediate draw does not create a TT principal variation");
+        }
+    }
+
+    for (const auto fen : {"4k3/8/8/8/8/8/8/R3K3 w - - 99 1",
+                          "4k3/8/8/8/8/8/8/R3K3 b - - 99 1"}) {
+        negamax_t search{fen};
+        passed &= test_support::check(search(1) == DRAW,
+                                      "quiet child reaches 100 halfmoves in quiescence");
+        passed &= test_support::check(search.nodes() > 1,
+                                      "99 halfmoves is not an immediate root draw");
+        passed &= test_support::check(search(2) == DRAW,
+                                      "quiet child reaches 100 halfmoves in full search");
+    }
+
+    negamax_t stalemate{"k7/8/1QK5/8/8/8/8/8 b - - 0 1"};
+    passed &= test_support::check(stalemate(1) == DRAW && stalemate(3) == DRAW,
+                                  "stalemate is a draw despite material advantage");
+
+    negamax_t mate_at_threshold{"k7/1Q6/2K5/8/8/8/8/8 b - - 100 1"};
+    for (const ply_t depth : {ply_t{0}, ply_t{1}, ply_t{3}})
+        passed &= test_support::check(mate_at_threshold(depth) == MIN,
+                                      "checkmate takes precedence over 50-move draw");
+
+    negamax_t mate_on_last_halfmove{"k7/8/1QK5/8/8/8/8/8 w - - 99 1"};
+    passed &= test_support::check(mate_on_last_halfmove(1) == MAX - 1,
+                                  "mating move at 100 halfmoves wins instead of drawing");
+    return passed;
+}
+
 bool run_negamax_tests() {
     bool passed = test_tt_mate_scores();
     passed &= test_lazy_move_ordering();
@@ -323,6 +378,7 @@ bool run_negamax_tests() {
     passed &= test_support::check(test_history_updates(), "piece-to history gravity updates");
     passed &= test_support::check(test_killer_heights(), "killers support the maximum ply height");
     passed &= test_history_ordering();
+    passed &= test_search_draws();
     for (const auto fen : {"k7/4P3/8/8/8/8/8/7K w - - 0 1",
                           "7k/8/8/8/8/8/4p3/K7 b - - 0 1"}) {
         chess::negamax_t search{fen};

@@ -34,6 +34,9 @@ bool test_see();
 bool test_king_slider_evasions();
 constexpr bool test_position_hash();
 bool test_hash_tree();
+bool test_halfmove_clock();
+bool test_threefold_repetition();
+constexpr bool test_insufficient_material();
 
 bool run_position_tests() {
     bool passed = test_support::check(test_pin_detection_after_moves(), "pin detection after move and undo");
@@ -51,6 +54,9 @@ bool run_position_tests() {
     passed &= test_support::check(test_king_slider_evasions(), "king slider evasions");
     passed &= test_support::check(test_position_hash(), "position hash identity");
     passed &= test_support::check(test_hash_tree(), "incremental hash tree");
+    passed &= test_support::check(test_halfmove_clock(), "halfmove clock and undo lifecycle");
+    passed &= test_support::check(test_threefold_repetition(), "threefold repetition and undo lifecycle");
+    passed &= test_support::check(test_insufficient_material(), "insufficient mating material");
     static_assert(sizeof(move_t) == sizeof(uint16_t));
     static_assert(move_t(a1, b2, Q) == 21056);
     static_assert(move_t(a1, b2, Q).from() == a1);
@@ -700,6 +706,147 @@ constexpr bool test_tactical_query() {
 }
 
 static_assert(test_tactical_query());
+
+constexpr bool test_insufficient_material() {
+    struct case_t {
+        std::string_view fen;
+        bool expected;
+    };
+    constexpr std::array cases{
+        case_t{"4k3/8/8/8/8/8/8/4K3 w - -", true},
+        case_t{"4k3/8/8/8/8/8/8/2B1K3 w - -", true},
+        case_t{"4k3/8/8/8/8/8/8/4K1N1 b - -", true},
+        case_t{"2b1k3/8/8/8/8/8/8/4K3 w - -", true},
+        case_t{"4k1n1/8/8/8/8/8/8/4K3 b - -", true},
+        case_t{"4kb2/8/8/8/8/8/8/2B1K3 w - -", true},
+        case_t{"4k3/8/8/8/8/4B3/8/2B1K3 w - -", false},
+        case_t{"4kb2/8/8/8/8/4B3/8/2B1K3 b - -", false},
+        case_t{"2b1k3/8/8/8/8/8/8/2B1K3 w - -", true},
+        case_t{"4k3/8/8/8/8/8/8/2BBK3 w - -", false},
+        case_t{"4k3/8/8/8/8/8/8/1N2K1N1 w - -", false},
+        case_t{"4k1n1/8/8/8/8/8/8/4K1N1 w - -", true},
+        case_t{"4k3/8/8/8/8/8/8/2B1K1N1 w - -", false},
+        case_t{"4k1n1/8/8/8/8/8/8/2B1K3 w - -", true},
+        case_t{"2b1k3/8/8/8/8/8/8/4K1N1 b - -", true},
+        case_t{"1nb1k3/8/8/8/8/8/8/4K3 b - -", false},
+        case_t{"1n2k1n1/8/8/8/8/8/8/4K3 b - -", false},
+        case_t{"4k3/8/8/8/8/8/4P3/4K3 w - -", false},
+        case_t{"4k3/4p3/8/8/8/8/8/4K3 b - -", false},
+        case_t{"4k3/8/8/8/8/8/8/R3K3 w - -", false},
+        case_t{"r3k3/8/8/8/8/8/8/4K3 b - -", false},
+        case_t{"4k3/8/8/8/8/8/8/3QK3 w - -", false},
+        case_t{"3qk3/8/8/8/8/8/8/4K3 b - -", false}
+    };
+    for (const auto& test : cases)
+        if (position_t{test.fen}.insufficient_material() != test.expected)
+            return false;
+
+    position_t position{"4k3/8/8/8/8/8/3r4/2B1K3 w - -"};
+    const move_t capture{c1, d2};
+    if (position.insufficient_material())
+        return false;
+    position.do_move(capture);
+    if (!position.insufficient_material())
+        return false;
+    position.undo_move(capture);
+    return !position.insufficient_material();
+}
+
+static_assert(test_insufficient_material());
+
+bool test_halfmove_clock() {
+    struct case_t {
+        std::string_view fen;
+        move_t move;
+        bool before;
+        bool after;
+    };
+    constexpr std::array cases{
+        case_t{"4k3/8/8/8/8/8/8/4K1N1 w - - 0 1", {g1, f3}, false, false},
+        case_t{"4k3/8/8/8/8/8/8/4K1N1 w - - 100 1", {g1, f3}, true, true},
+        case_t{"4k3/8/8/8/8/8/8/4K1N1 w - - 101 1", {g1, f3}, true, true},
+        case_t{"4k3/8/8/8/8/8/8/4K1N1 w - - 99 1", {g1, f3}, false, true},
+        case_t{"4k3/8/8/8/8/8/8/4K1N1 w - - 98 1", {g1, f3}, false, false},
+        case_t{"4k3/8/8/8/8/8/8/4K1N1 w - - 255 1", {g1, f3}, true, true},
+        case_t{"4k3/8/8/8/8/8/4P3/4K3 w - - 100 1", {e2, e3}, true, false},
+        case_t{"4k3/8/8/8/8/8/4P3/4K3 w - - 100 1", {e2, e4}, true, false},
+        case_t{"4k3/8/8/3p4/4P3/8/8/4K3 w - - 100 1", {e4, d5}, true, false},
+        case_t{"4k3/8/8/3p4/8/8/8/3RK3 w - - 100 1", {d1, d5}, true, false},
+        case_t{"4k3/8/8/3pP3/8/8/8/4K3 w - d6 100 1", {e5, d6}, true, false},
+        case_t{"k7/4P3/8/8/8/8/8/4K3 w - - 100 1", {e7, e8, Q}, true, false},
+        case_t{"4k3/8/8/8/8/8/8/4K2R w K - 99 1", {e1, g1}, false, true},
+        case_t{"4k1n1/8/8/8/8/8/8/4K3 b - - 99 1", {g8, f6}, false, true}
+    };
+    bool passed = true;
+    for (const auto& test : cases) {
+        position_t position{test.fen};
+        const position_t before = position;
+        passed &= test_support::check(position.fifty_move_rule() == test.before,
+                                      "FEN halfmove clock");
+        position.do_move(test.move);
+        passed &= test_support::check(position.fifty_move_rule() == test.after,
+                                      "pawn moves and captures reset clock; quiet moves increment");
+        position.undo_move(test.move);
+        passed &= test_support::check(position.fifty_move_rule() == test.before &&
+                                      same_position(position, before),
+                                      "undo restores halfmove clock and board");
+    }
+
+    position_t position{"4k1n1/8/8/8/8/8/8/4K1N1 w - - 98 1"};
+    position.do_move({g1, f3});
+    passed &= test_support::check(!position.fifty_move_rule(), "99 halfmoves is below threshold");
+    position.do_move({g8, f6});
+    passed &= test_support::check(position.fifty_move_rule(), "100 halfmoves reaches threshold");
+    position.undo_move({g8, f6});
+    passed &= test_support::check(!position.fifty_move_rule(), "nested undo restores 99 halfmoves");
+    position.undo_move({g1, f3});
+    position.do_move({g1, h3});
+    passed &= test_support::check(!position.fifty_move_rule(), "outer undo restores 98 halfmoves");
+    return passed;
+}
+
+bool test_threefold_repetition() {
+    bool passed = true;
+    position_t repeated{};
+    constexpr std::array cycle{move_t{g1, f3}, move_t{g8, f6}, move_t{f3, g1}, move_t{f6, g8}};
+    passed &= test_support::check(!repeated.threefold_repetition(), "initial position occurs once");
+    for (size_t ply = 0; ply < 8; ++ply) {
+        repeated.do_move(cycle[ply % cycle.size()]);
+        passed &= test_support::check(repeated.threefold_repetition() == (ply == 7),
+                                      "threefold starts at third occurrence, not second");
+    }
+    repeated.do_move({e2, e4});
+    passed &= test_support::check(!repeated.threefold_repetition(), "pawn move ends repetition sequence");
+    repeated.undo_move({e2, e4});
+    passed &= test_support::check(repeated.threefold_repetition(), "undo restores repetition count");
+    repeated.undo_move(cycle.back());
+    passed &= test_support::check(!repeated.threefold_repetition(), "undo removes third occurrence");
+    repeated.do_move(cycle.back());
+    passed &= test_support::check(repeated.threefold_repetition(), "replaying restores third occurrence");
+
+    position_t from_fen{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 99 50"};
+    passed &= test_support::check(!from_fen.threefold_repetition(),
+                                  "FEN halfmove clock does not supply repetition history");
+
+    position_t rights{"4k1n1/8/8/8/8/8/8/4K2R w K - 0 1"};
+    constexpr std::array rook_cycle{move_t{h1, h2}, move_t{g8, f6},
+                                    move_t{h2, h1}, move_t{f6, g8}};
+    for (int iteration = 0; iteration < 3; ++iteration) {
+        for (const move_t move : rook_cycle)
+            rights.do_move(move);
+        passed &= test_support::check(rights.threefold_repetition() == (iteration == 2),
+                                      "same board with lost castling rights is a different position");
+    }
+
+    position_t ep{"4k1n1/8/8/3pP3/8/8/8/4K1N1 w - d6 0 1"};
+    for (int iteration = 0; iteration < 3; ++iteration) {
+        for (const move_t move : cycle)
+            ep.do_move(move);
+        passed &= test_support::check(ep.threefold_repetition() == (iteration == 2),
+                                      "expired capturable en-passant right changes repetition identity");
+    }
+    return passed;
+}
 
 bool test_check_queries() {
     struct position_case_t {

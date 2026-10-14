@@ -1,6 +1,7 @@
 module;
 
 #include <cassert>
+#include <charconv>
 #include <string_view>
 #include <ranges>
 
@@ -42,8 +43,10 @@ constexpr position_t::position_t(const std::string_view fen) noexcept :
     _occupied_by_side{},
     _checkers{},
     _special{},
-    _side{},
     _hash{},
+    _side{},
+    _halfmove{},
+    _repetition{},
     _stack{} {
 
     auto fen_parts = fen | std::views::split(' ');
@@ -83,6 +86,11 @@ constexpr position_t::position_t(const std::string_view fen) noexcept :
     if (en_passant_part[0] != '-')
         _special.set(square_t{file_e(en_passant_part[0] - 'a'), rank_e(en_passant_part[1] - '1')});
 
+    if (fen_part != fen_parts.end()) {
+        std::string_view half_move_part {*fen_part++};
+        std::from_chars(&*half_move_part.begin(), &*half_move_part.end(), _halfmove);
+    }
+
     if (_side == BLACK)
         _hash ^= hashes::lookup::side();
     for (const square_t square : castling())
@@ -91,6 +99,7 @@ constexpr position_t::position_t(const std::string_view fen) noexcept :
         _hash ^= hashes::lookup::ep(square.file());
 
     _checkers = attackers_of(by(_side, K).front()) & by(~_side);
+    _repetition = 1;
 }
 
 constexpr position_t::stack_t::stack_t() noexcept : _data{}, _size{} {}
@@ -114,4 +123,8 @@ constexpr const position_t::state_t& position_t::stack_t::top() const noexcept {
     return _data[_size - 1];
 }
 
+constexpr std::span<const position_t::state_t> position_t::stack_t::data() const noexcept {
+    return std::span{_data}.first(_size);
+}
+    
 } // namespace chess

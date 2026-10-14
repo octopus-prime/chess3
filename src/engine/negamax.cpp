@@ -54,6 +54,15 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
 
     ++nodes_searched;
 
+    if (position.threefold_repetition() || position.fifty_move_rule() || position.insufficient_material()) {
+        if (position.check()) {
+            std::array<move_t, 256> buffer;
+            if (position.generate_all_moves(buffer).empty())
+                return score_e(MIN + height);
+        }
+        return DRAW;
+    }
+
     move_t best_move{};
     if (const auto entry = transposition.get(position.hash(), height)) {
         best_move = entry->move;
@@ -138,10 +147,19 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
 score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     ++nodes_searched;
 
-    const bool in_check = !position.checkers().empty();
+    const bool in_check = position.check();
 
     if (height == MAX_PLY - 1)
         return in_check ? evaluate() : alpha;
+
+    if (position.threefold_repetition() || position.fifty_move_rule() || position.insufficient_material()) {
+        if (in_check) {
+            std::array<move_t, 256> buffer;
+            if (position.generate_all_moves(buffer).empty())
+                return score_e(MIN + height);
+        }
+        return DRAW;
+    }
 
     if (!in_check) {
         const score_t stand_pat = evaluate();
