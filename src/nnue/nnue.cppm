@@ -2,6 +2,7 @@ module;
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string_view>
 #include <span>
 
@@ -30,7 +31,7 @@ struct entry_t final {
 };
 
 struct nnue_t final {
-    explicit nnue_t(const std::string_view filename);
+    static std::unique_ptr<nnue_t> load();
 
     void initialize(entry_t& entry) const noexcept;
     void update(entry_t& entry, const std::span<const uint16_t> removed_features, const std::span<const uint16_t> added_features) const noexcept;
@@ -38,6 +39,8 @@ struct nnue_t final {
     int16_t evaluate(const entry_t& t, const entry_t& o, const size_t piece_count) const noexcept;
 
 private:
+    nnue_t(const std::string_view filename);
+
     struct feature_layer_t final {
         alignas(64) int16_t biases0[L1];
         alignas(64) int16_t weights0[L0][L1];

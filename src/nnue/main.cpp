@@ -13,7 +13,7 @@ int main() {
     using namespace chess::nnue;
     constexpr std::string_view filename = "../nnue.bin";
     try {
-        const auto nnue = std::make_unique<nnue_t>(filename);
+        const auto nnue = nnue_t::load();
         const auto index = make_index(e1, a2, WP, WHITE);
         entry_t entry{};
         nnue->initialize(entry);

@@ -59,6 +59,10 @@ constexpr squares_t position_t::castling() const noexcept {
     return _special & squares_t{_1, _8};
 }
 
+constexpr bool position_t::check() const noexcept {
+    return !checkers().empty();
+}
+
 constexpr bool position_t::tactical(const move_t move) const noexcept {
     return move.promotion() != NO_TYPE || at(move.to()).type() != NO_TYPE || (at(move.from()).type() == P && en_passant()[move.to()]);
 }

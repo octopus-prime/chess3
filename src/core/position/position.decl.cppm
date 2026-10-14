@@ -53,6 +53,8 @@ struct position_t final {
   constexpr squares_t castling() const noexcept;
   constexpr squares_t attacked_by(const side_t side) const noexcept;
   constexpr squares_t attackers_of(const square_t square) const noexcept;
+  constexpr bool check() const noexcept;
+  constexpr bool check(const move_t move) const noexcept;
   constexpr bool tactical(const move_t move) const noexcept;
   constexpr score_t see(const move_t move) const noexcept;
 

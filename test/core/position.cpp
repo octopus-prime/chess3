@@ -12,6 +12,7 @@
 import types.hash;
 import types.squares;
 import types.piece;
+import types.score;
 import core.move;
 import core.position;
 import core.hashes.lookup;
@@ -28,6 +29,8 @@ bool test_pinned_pawn_generation();
 bool test_promotion_generation();
 bool test_tactical_generation();
 constexpr bool test_tactical_query();
+bool test_check_queries();
+bool test_see();
 bool test_king_slider_evasions();
 constexpr bool test_position_hash();
 bool test_hash_tree();
@@ -43,6 +46,8 @@ bool run_position_tests() {
     passed &= test_support::check(test_promotion_generation(), "SIMD promotion generation");
     passed &= test_support::check(test_tactical_generation(), "captures and promotions generation");
     passed &= test_support::check(test_tactical_query(), "tactical move classification");
+    passed &= test_support::check(test_check_queries(), "position and move check queries");
+    passed &= test_support::check(test_see(), "static exchange evaluation");
     passed &= test_support::check(test_king_slider_evasions(), "king slider evasions");
     passed &= test_support::check(test_position_hash(), "position hash identity");
     passed &= test_support::check(test_hash_tree(), "incremental hash tree");
@@ -695,6 +700,89 @@ constexpr bool test_tactical_query() {
 }
 
 static_assert(test_tactical_query());
+
+bool test_check_queries() {
+    struct position_case_t {
+        std::string_view fen;
+        bool expected;
+    };
+    constexpr std::array position_cases{
+        position_case_t{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", false},
+        position_case_t{"4r1k1/8/8/8/8/8/8/4K3 w - - 0 1", true},
+        position_case_t{"4k3/8/8/8/8/8/4R3/4K3 b - - 0 1", true},
+        position_case_t{"4k3/8/8/8/8/8/8/4K3 w - - 0 1", false}
+    };
+    bool passed = true;
+    for (const auto& test : position_cases) {
+        const position_t position{test.fen};
+        passed &= test_support::check(position.check() == test.expected,
+                                      "current side-to-move check status");
+    }
+
+    position_t lifecycle{"4k3/8/8/8/8/8/4R3/4K3 w - - 0 1"};
+    const move_t checking_move{e2, e7};
+    const move_t king_escape{e8, d8};
+    passed &= test_support::check(!lifecycle.check(), "initial position is not check");
+    lifecycle.do_move(checking_move);
+    passed &= test_support::check(lifecycle.check(), "check status updates after checking move");
+    lifecycle.do_move(king_escape);
+    passed &= test_support::check(!lifecycle.check(), "check status clears after king escape");
+    lifecycle.undo_move(king_escape);
+    passed &= test_support::check(lifecycle.check(), "undo restores check status");
+    lifecycle.undo_move(checking_move);
+    passed &= test_support::check(!lifecycle.check(), "undo restores initial check status");
+
+    struct move_case_t {
+        std::string_view fen;
+        move_t move;
+        bool expected;
+    };
+    constexpr std::array move_cases{
+        move_case_t{"8/8/3k4/8/4P3/8/8/4K3 w - - 0 1", {e4, e5}, true},
+        move_case_t{"8/8/4k3/8/8/5N2/8/4K3 w - - 0 1", {f3, g5}, true},
+        move_case_t{"8/7k/8/8/8/8/8/1B5K w - - 0 1", {b1, e4}, true},
+        move_case_t{"4k3/8/8/8/8/8/8/R6K w - - 0 1", {a1, e1}, true},
+        move_case_t{"4k3/8/8/8/4Q3/8/8/K7 w - - 0 1", {e4, e7}, true},
+        move_case_t{"k7/4P3/8/8/8/8/8/4K3 w - - 0 1", {e7, e8, Q}, true},
+        move_case_t{"4k3/8/8/4B3/8/8/8/4R2K w - - 0 1", {e5, d6}, true},
+        move_case_t{"8/8/8/RPp4k/8/8/8/4K3 w - c6 0 1", {b5, c6}, true},
+        move_case_t{"5k2/8/8/8/8/8/8/4K2R w K - 0 1", {e1, g1}, true},
+        move_case_t{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                    {e2, e3}, false}
+    };
+    for (const auto& test : move_cases) {
+        const position_t position{test.fen};
+        passed &= test_support::check(position.check(test.move) == test.expected,
+                                      "move gives check after its board effects");
+    }
+    return passed;
+}
+
+bool test_see() {
+    struct case_t {
+        std::string_view fen;
+        move_t move;
+        score_e expected;
+    };
+    constexpr std::array cases{
+        case_t{"4k3/8/8/3p4/4P3/8/8/4K3 w - - 0 1", {e4, d5}, score_e{PAWN}},
+        case_t{"4k3/4p3/3p4/4Q3/8/8/8/K7 w - - 0 1", {e5, d6},
+               score_e{-800}},
+        case_t{"4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1", {e5, d6}, score_e{PAWN}},
+        case_t{"r3k3/1P6/8/8/8/8/8/4K3 w - - 0 1", {b7, a8, Q},
+               score_e{1300}},
+        case_t{"k7/4P3/8/8/8/8/8/4K3 w - - 0 1", {e7, e8, Q},
+               score_e{800}},
+        case_t{"4k3/8/8/8/4P3/8/8/4K3 w - - 0 1", {e4, e5}, score_e{DRAW}}
+    };
+    bool passed = true;
+    for (const auto& test : cases) {
+        const position_t position{test.fen};
+        passed &= test_support::check(position.see(test.move) == test.expected,
+                                      "SEE returns expected material balance");
+    }
+    return passed;
+}
 
 bool test_tactical_generation() {
     struct case_t {

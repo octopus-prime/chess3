@@ -33,6 +33,63 @@ constexpr squares_t position_t::attackers_of(const square_t square) const noexce
     return squares_e(attackers);
 }
 
+constexpr bool position_t::check(const move_t move) const noexcept {
+    using namespace attacks::lookup;
+    const side_t moving_side = side();
+    const square_t king = by(~moving_side, K).front();
+    const square_t from = move.from();
+    const square_t to = move.to();
+    const type_t moving_type = at(from).type();
+    const type_t placed_type = move.promotion() == NO_TYPE ? moving_type : move.promotion();
+
+    squares_t occupied = by();
+    occupied.reset(from);
+    occupied.reset(to);
+    occupied.set(to);
+
+    if (moving_type == P && !en_passant().empty() && en_passant()[to]) {
+        occupied.reset(square_t{to.file(), from.rank()});
+    }
+
+    squares_t pawns = by(moving_side, P);
+    squares_t knights = by(moving_side, N);
+    squares_t bishops = by(moving_side, B);
+    squares_t rooks = by(moving_side, R);
+    squares_t queens = by(moving_side, Q);
+    switch (moving_type) {
+    case P: pawns.reset(from); break;
+    case N: knights.reset(from); break;
+    case B: bishops.reset(from); break;
+    case R: rooks.reset(from); break;
+    case Q: queens.reset(from); break;
+    default: break;
+    }
+    switch (placed_type) {
+    case P: pawns.set(to); break;
+    case N: knights.set(to); break;
+    case B: bishops.set(to); break;
+    case R: rooks.set(to); break;
+    case Q: queens.set(to); break;
+    default: break;
+    }
+
+    const bool castle = moving_type == K && from.rank() == to.rank() &&
+                        (from.file() == e) && (to.file() == c || to.file() == g);
+    if (castle) {
+        const square_t rook_from{to.file() == g ? h : a, from.rank()};
+        const square_t rook_to{to.file() == g ? f : d, from.rank()};
+        rooks.reset(rook_from);
+        rooks.set(rook_to);
+        occupied.reset(rook_from);
+        occupied.set(rook_to);
+    }
+
+    return (pawn(king, ~moving_side) & pawns) ||
+           (knight(king) & knights) ||
+           (bishop(king, occupied) & (bishops | queens)) ||
+           (rook(king, occupied) & (rooks | queens));
+}
+
 constexpr score_t position_t::see(const move_t move) const noexcept {
     using namespace attacks::lookup;
 
@@ -40,8 +97,9 @@ constexpr score_t position_t::see(const move_t move) const noexcept {
     squares_t bishop_sliders = bishop(move.to(), {});
     squares_t occupied = by();
     
-    // En Passant: geschlagener Bauer steht auf Nachbarfeld
-    if (at(move.from()).type() == P && move.to() == this->en_passant().front()) {
+    const squares_t ep = en_passant();
+    const bool is_en_passant = at(move.from()).type() == P && !ep.empty() && ep[move.to()];
+    if (is_en_passant) {
         square_t ep_pawn_sq = square_t{move.to().file(), move.from().rank()};
         occupied.reset(ep_pawn_sq);
     }
@@ -66,7 +124,7 @@ constexpr score_t position_t::see(const move_t move) const noexcept {
     if (move.promotion() != NO_TYPE) {
         gain[depth] += score_t{move.promotion()} - score_t{P};
         next_victim = move.promotion();
-    } else if (at(move.from()).type() == P && move.to() == this->en_passant().front()) {
+    } else if (is_en_passant) {
         gain[depth] = score_t{P};
     }
 

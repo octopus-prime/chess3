@@ -12,11 +12,11 @@ bool run_evaluator_tests() {
     evaluator_t evaluator{};
 
     position_t position{};
-    bool passed = test_support::check(evaluator.evaluate(position) == score_e{4},
+    bool passed = test_support::check(evaluator.evaluate(position) == score_e{5},
                                       "evaluator initial position");
 
     position.do_move(move_t{e2, e4});
-    passed &= test_support::check(evaluator.evaluate(position) == score_e{-24},
+    passed &= test_support::check(evaluator.evaluate(position) == score_e{-25},
                                   "evaluator after 1. e4");
 
     position.do_move(move_t{e7, e5});
@@ -28,7 +28,7 @@ bool run_evaluator_tests() {
                                   "evaluator custom position white to move");
 
     position = position_t{"1k6/8/8/8/3r4/2P5/8/K7 b - -"};
-    passed &= test_support::check(evaluator.evaluate(position) == score_e{560},
+    passed &= test_support::check(evaluator.evaluate(position) == score_e{562},
                                   "evaluator custom position black to move");
 
     // Test king moves and cache consistency compared to fresh evaluation

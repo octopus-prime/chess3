@@ -5,6 +5,7 @@ module;
 #include <span>
 #include <ranges>
 #include <algorithm>
+#include <memory>
 
 #include <immintrin.h>
 
@@ -179,6 +180,10 @@ void affine_tranform(const std::span<const uint8_t, L3> input, const std::span<c
     const __m256i row = _mm256_load_si256(reinterpret_cast<const __m256i*>(weights.data()));
     const __m256i sum = _mm256_madd_epi16(_mm256_maddubs_epi16(in, row), _mm256_set1_epi16(1));
     output[0] = biases[0] + __builtin_reduce_add((__v8si) sum);
+}
+
+std::unique_ptr<nnue_t> nnue_t::load() {
+    return std::unique_ptr<nnue_t>(new nnue_t("../nnue.bin"));
 }
 
 nnue_t::nnue_t(const std::string_view filename) {

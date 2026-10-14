@@ -152,12 +152,19 @@ score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     }
 
     std::array<move_t, 256> buffer;
-    const std::span<move_t> moves = in_check
+    std::span<move_t> moves = in_check
         ? position.generate_all_moves(buffer)
         : position.generate_tactical_moves(buffer);
 
     if (in_check && moves.empty())
         return score_e(MIN + height);
+
+    if (!in_check) {
+        auto tail = std::ranges::partition(moves, [&](const move_t& move) {
+            return move.promotion() != NO_TYPE || position.check(move) || position.see(move) >= 0;
+        });
+        moves = moves.first(tail.begin() - moves.begin());
+    }
 
     std::ranges::sort(moves, std::greater<>(), [&](const move_t& move) {
         return position.see(move);
