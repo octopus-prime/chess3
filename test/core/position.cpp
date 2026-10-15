@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <string_view>
 #include <algorithm>
+#include <ranges>
 #include <tuple>
 #include "test_support.hpp"
 
@@ -36,6 +37,8 @@ constexpr bool test_position_hash();
 bool test_hash_tree();
 bool test_halfmove_clock();
 bool test_threefold_repetition();
+bool test_null_moves();
+bool test_null_move_repetition();
 constexpr bool test_insufficient_material();
 
 bool run_position_tests() {
@@ -56,6 +59,8 @@ bool run_position_tests() {
     passed &= test_support::check(test_hash_tree(), "incremental hash tree");
     passed &= test_support::check(test_halfmove_clock(), "halfmove clock and undo lifecycle");
     passed &= test_support::check(test_threefold_repetition(), "threefold repetition and undo lifecycle");
+    passed &= test_null_moves();
+    passed &= test_null_move_repetition();
     passed &= test_support::check(test_insufficient_material(), "insufficient mating material");
     static_assert(sizeof(move_t) == sizeof(uint16_t));
     static_assert(move_t(a1, b2, Q) == 21056);
@@ -845,6 +850,130 @@ bool test_threefold_repetition() {
         passed &= test_support::check(ep.threefold_repetition() == (iteration == 2),
                                       "expired capturable en-passant right changes repetition identity");
     }
+    return passed;
+}
+
+bool test_null_moves() {
+    constexpr std::array positions{
+        "r3k2r/8/8/3pP3/8/8/8/R3K2R w KQkq d6 99 1",
+        "r3k2r/8/8/8/3Pp3/8/8/R3K2R b KQkq d3 100 1",
+        "4k1n1/8/8/8/8/8/8/4K1N1 w - - 0 1"
+    };
+    bool passed = true;
+    for (const auto fen : positions) {
+        position_t position{fen};
+        const position_t before = position;
+        position.do_null_move();
+        passed &= test_support::check(
+            position.side() == ~before.side() && position.by() == before.by() &&
+                position.castling() == before.castling() && position.en_passant().empty() &&
+                !position.check() && position.last_move() == move_t{} &&
+                position.hash() == recompute_hash(position) &&
+                position.hash() != before.hash(),
+            "null move switches side and hash, clears EP, preserves board and castling");
+        passed &= test_support::check(
+            position.fifty_move_rule() == before.fifty_move_rule(),
+            "null move preserves the halfmove counter policy");
+        const position_t after_null = position;
+        std::array<move_t, 256> buffer;
+        for (const move_t move : position.generate_all_moves(buffer)) {
+            position.do_move(move);
+            passed &= test_support::check(
+                position.last_move() == move && position.hash() == recompute_hash(position),
+                "normal child after null move updates last move and hash");
+            position.undo_move(move);
+            passed &= test_support::check(
+                same_position(position, after_null) && position.last_move() == move_t{} &&
+                    position.fifty_move_rule() == after_null.fifty_move_rule(),
+                "child undo restores the null position");
+        }
+        position.undo_null_move();
+        passed &= test_support::check(
+            same_position(position, before) && position.last_move() == before.last_move() &&
+                position.fifty_move_rule() == before.fifty_move_rule(),
+            "null undo restores hash, EP, castling, last move and clock");
+    }
+
+    position_t position{};
+    const position_t before = position;
+    const move_t push{e2, e4};
+    position.do_move(push);
+    const position_t after_push = position;
+    position.do_null_move();
+    const move_t child{g1, f3};
+    position.do_move(child);
+    position.undo_move(child);
+    passed &= test_support::check(position.last_move() == move_t{},
+                                  "child undo restores the null last-move marker");
+    position.undo_null_move();
+    passed &= test_support::check(
+        same_position(position, after_push) && position.last_move() == push,
+        "null undo restores the preceding real move and double-push EP target");
+    position.undo_move(push);
+    passed &= test_support::check(
+        same_position(position, before) && position.last_move() == before.last_move(),
+        "normal-null-normal sequence fully restores the original position");
+    return passed;
+}
+
+bool test_null_move_repetition() {
+    position_t position{"4k1n1/8/8/8/8/8/8/4K1N1 w - - 0 1"};
+    constexpr std::array cycle{
+        move_t{g1, f3}, move_t{g8, f6}, move_t{f3, g1}, move_t{f6, g8}
+    };
+    for (int iteration = 0; iteration < 2; ++iteration)
+        for (const move_t move : cycle)
+            position.do_move(move);
+    bool passed = test_support::check(position.threefold_repetition(),
+                                      "null repetition test starts with threefold history");
+    const position_t before_null = position;
+    position.do_null_move();
+    passed &= test_support::check(!position.threefold_repetition(),
+                                  "null move does not inherit the preceding repetition count");
+
+    // Five real plies return to the pre-null board and side via king triangulation.
+    constexpr std::array triangle{
+        move_t{e8, f8}, move_t{g1, f3}, move_t{f8, f7},
+        move_t{f3, g1}, move_t{f7, e8}
+    };
+    for (const move_t move : triangle)
+        position.do_move(move);
+    passed &= test_support::check(
+        position.hash() == before_null.hash() && !position.threefold_repetition(),
+        "matching pre-null history is excluded even when the boundary has opposite parity");
+    for (int iteration = 0; iteration < 2; ++iteration) {
+        for (const move_t move : cycle)
+            position.do_move(move);
+        passed &= test_support::check(position.threefold_repetition() == (iteration == 1),
+                                      "real repetitions within the null subtree still count");
+    }
+    for (int iteration = 0; iteration < 2; ++iteration)
+        for (const move_t move : cycle | std::views::reverse)
+            position.undo_move(move);
+    for (const move_t move : triangle | std::views::reverse)
+        position.undo_move(move);
+    position.undo_null_move();
+    passed &= test_support::check(
+        same_position(position, before_null) &&
+            position.last_move() == before_null.last_move() && position.threefold_repetition(),
+        "null undo restores pre-null threefold history");
+
+    const std::array black_cycle{
+        move_t{g8, f6}, move_t{g1, f3}, move_t{f6, g8}, move_t{f3, g1}
+    };
+    position.do_null_move();
+    for (int iteration = 0; iteration < 2; ++iteration) {
+        for (const move_t move : black_cycle)
+            position.do_move(move);
+        passed &= test_support::check(position.threefold_repetition() == (iteration == 1),
+                                      "the post-null boundary position counts as the first occurrence");
+    }
+    for (int iteration = 0; iteration < 2; ++iteration)
+        for (const move_t move : black_cycle | std::views::reverse)
+            position.undo_move(move);
+    position.undo_null_move();
+    passed &= test_support::check(position.threefold_repetition(),
+                                  "undo restores repetition after a repeated null subtree");
     return passed;
 }
 

@@ -371,6 +371,53 @@ bool test_search_draws() {
     return passed;
 }
 
+bool run_mate_tests() {
+    using namespace chess;
+    struct case_t {
+        std::string_view fen;
+        ply_t depth;
+        std::string_view description;
+    };
+    constexpr std::array cases{
+        case_t{"1k1r4/pp1b1R2/3q2pp/4p3/2B5/4Q3/PPP2B2/2K5 b - -", 5,
+               "mate in 3 at depth 5"},
+        case_t{"4r1k1/pp4pp/8/q1p1N3/5P2/1P4P1/P6P/3Q2K1 w - -", 9,
+               "mate in 5 at depth 9"},
+        case_t{"n1N3br/2p1Bpkr/1pP2R1b/pP1p1PpR/Pp4P1/1P6/1K1P4/8 w - -", 11,
+               "mate in 6 at depth 11"},
+        case_t{"r3k3/1pp1p1Kp/1p2P3/1p6/2N5/P2P2pr/5B1p/3Q1R2 w q -", 15,
+               "mate in 8 at depth 15"}
+    };
+    bool passed = true;
+    for (const auto& test : cases) {
+        negamax_t search{test.fen};
+        score_t score{};
+        for (int depth = 1; depth <= test.depth; ++depth)
+            score = search(static_cast<ply_t>(depth));
+        const score_t expected{score_e(MAX - test.depth)};
+        if (score != expected)
+            std::cerr << test.description << ": expected " << int(score_e(expected))
+                      << ", got " << int(score_e(score)) << '\n';
+        passed &= test_support::check(score == expected, test.description);
+        std::array<move_t, MAX_PLY> pv_buffer;
+        const auto pv = search.extract_pv(pv_buffer, test.depth);
+        position_t position{test.fen};
+        std::array<move_t, 256> move_buffer;
+        for (const move_t move : pv) {
+            const auto legal = position.generate_all_moves(move_buffer);
+            const bool valid = std::ranges::find(legal, move) != legal.end();
+            passed &= test_support::check(valid, "mate PV contains only legal moves");
+            if (!valid)
+                break;
+            position.do_move(move);
+        }
+        passed &= test_support::check(!pv.empty(), "mate search produces a principal variation");
+        passed &= test_support::check(search(test.depth) == expected,
+                                      "mate PV extraction restores the search position");
+    }
+    return passed;
+}
+
 bool run_negamax_tests() {
     bool passed = test_tt_mate_scores();
     passed &= test_lazy_move_ordering();

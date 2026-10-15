@@ -256,7 +256,12 @@ CTest is available through VS Code's CMake Tools test integration. To run a suit
 directly, use `./build/chess_types_tests` for Types,
 `./build/chess_core_tests lookup`, `./build/chess_core_tests position`, or
 `./build/chess_core_tests perft`; no argument runs all Core suites.
-`./build/chess_engine_tests` runs the Engine suite.
+`./build/chess_engine_tests` runs all Engine suites. The `mates` selector
+(`chess.mates` in CMake Tools) runs the longer mate-in-3/5/6/8 search regressions,
+using iterative deepening through depths 5/9/11/15 and checking exact mate
+distances and legal PV moves. The `negamax` selector runs the shorter search tests.
+The Core `position` suite also checks null-move hash/EP/last-move round trips,
+halfmove-counter preservation, and repetition isolation across null moves.
 CTest labels `types`, `core`, and `engine` group tests by library.
 Set `BUILD_TESTING=OFF` to omit all three test targets.
 
@@ -313,4 +318,3 @@ interface. LTO remains enabled across library and application boundaries.
 ## License
 
 This project is licensed under the [GNU General Public License Version 3](LICENSE).
-

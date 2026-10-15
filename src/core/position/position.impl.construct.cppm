@@ -44,6 +44,7 @@ constexpr position_t::position_t(const std::string_view fen) noexcept :
     _checkers{},
     _special{},
     _hash{},
+    _last_move{},
     _side{},
     _halfmove{},
     _repetition{},

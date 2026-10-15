@@ -117,6 +117,18 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
         //     depth--;
     }
 
+    // Null Move Pruning
+    {
+        int R = 2 + (depth > 6);
+        if (!PV && depth > R + 1 && !in_check && !beta.decisive() && position.last_move() != move_t{} && !(position.by(position.side()) & ~position.by(position.side(), P, K)).empty() && moves.size() > 8 && evaluate() >= beta + 50) {
+            position.do_null_move();
+            const score_t score = -search<false>(depth - 1 - R, height + 1, score_e(-beta), score_e(-beta + 1));
+            position.undo_null_move();
+            if (score >= beta)
+                return beta;
+        }
+    }
+
     const auto get_score = [&](const move_t& move) {
         return position.see(move);
     };
