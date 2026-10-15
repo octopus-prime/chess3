@@ -24,6 +24,7 @@ struct position_t final {
     squares_t checkers;
     squares_t special;
     hash_t hash;
+    move_t last_move;
     piece_t captured;
     square_t captured_square;
     uint8_t halfmove;
@@ -52,6 +53,7 @@ struct position_t final {
   constexpr squares_t by(const side_t side, const type_t type1, const type_t type2) const noexcept;
   constexpr side_t side() const noexcept;
   constexpr hash_t hash() const noexcept;
+  constexpr move_t last_move() const noexcept;
   constexpr squares_t checkers() const noexcept;
   constexpr squares_t en_passant() const noexcept;
   constexpr squares_t castling() const noexcept;
@@ -71,6 +73,8 @@ struct position_t final {
 
   constexpr void do_move(const move_t move) noexcept;
   constexpr void undo_move(const move_t move) noexcept;
+  constexpr void do_null_move() noexcept;
+  constexpr void undo_null_move() noexcept;
 
 private:
   constexpr uint8_t find_repetitions(const hash_t hash, const uint8_t halfmove) const noexcept;
@@ -83,6 +87,7 @@ private:
   squares_t _checkers;
   squares_t _special; // castle and ep
   hash_t _hash;
+  move_t _last_move;
   side_t _side;
   uint8_t _halfmove;
   uint8_t _repetition;

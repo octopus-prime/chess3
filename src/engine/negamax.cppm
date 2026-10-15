@@ -26,7 +26,9 @@ struct negamax_t final {
     std::span<move_t> extract_pv(const std::span<move_t, MAX_PLY> buffer, ply_t max_length) noexcept;
 
 private:
+    template <bool PV>
     score_t search(ply_t depth, ply_t height, score_t alpha, score_t beta) noexcept;
+    template <bool PV>
     score_t qsearch(ply_t height, score_t alpha, score_t beta) noexcept;
     score_t evaluate() noexcept;
 

@@ -50,6 +50,10 @@ constexpr hash_t position_t::hash() const noexcept {
     return _hash;
 }
 
+constexpr move_t position_t::last_move() const noexcept {
+    return _last_move;
+}
+
 constexpr squares_t position_t::checkers() const noexcept {
     return _checkers;
 }
@@ -98,15 +102,31 @@ constexpr bool position_t::insufficient_material() const noexcept {
     // return true;
 }
 
-constexpr uint8_t position_t::find_repetitions(const hash_t hash, const uint8_t halfmove) const noexcept {
+// constexpr uint8_t position_t::find_repetitions(const hash_t hash, const uint8_t halfmove) const noexcept {
+//     const std::span<const state_t> states = _stack.data();
+//     int s = states.size();
+//     int limit = std::max(0, s - halfmove);
+//     for (int i = s - 2; i >= limit; i -= 2) {
+//         if (states[i].hash == hash)
+//             return states[i].repetition;
+//     }
+//     return 0;
+// }
+
+constexpr uint8_t position_t::find_repetitions(
+    const hash_t hash, const uint8_t halfmove) const noexcept {
     const std::span<const state_t> states = _stack.data();
-    int s = states.size();
-    int limit = std::max(0, s - halfmove);
-    for (int i = s - 2; i >= limit; i -= 2) {
-        if (states[i].hash == hash)
+    const int s = static_cast<int>(states.size());
+    const int limit = std::max(0, s - halfmove);
+
+    for (int i = s - 1; i >= limit; --i) {
+        if ((s - i) % 2 == 0 && states[i].hash == hash)
             return states[i].repetition;
+
+        if (states[i].last_move == move_t{})
+            break;
     }
     return 0;
 }
-    
+
 } // namespace chess

@@ -61,7 +61,7 @@ constexpr void position_t::do_move(const move_t move) noexcept {
         assert(_checkers.empty());
     }
 
-    _stack.push(state_t{_checkers, _special, _hash, captured, captured_square,
+    _stack.push(state_t{_checkers, _special, _hash, _last_move, captured, captured_square,
                        _halfmove, _repetition});
 
     if (piece.type() == P || captured != NO_PIECE)
@@ -119,6 +119,7 @@ constexpr void position_t::do_move(const move_t move) noexcept {
             : hashes::lookup::ep(square.file());
     }
     _hash ^= hashes::lookup::side();
+    _last_move = move;
     _side = ~_side;
     _checkers = attackers_of(by(_side, K).front()) & by(~_side);
     _repetition = 1 + find_repetitions(_hash, _halfmove);
@@ -179,6 +180,36 @@ constexpr void position_t::undo_move(const move_t move) noexcept {
     _checkers = state.checkers;
     _special = state.special;
     _hash = state.hash;
+    _last_move = state.last_move;
+    _halfmove = state.halfmove;
+    _repetition = state.repetition;
+    _stack.pop();
+}
+
+constexpr void position_t::do_null_move() noexcept {
+    assert(_checkers.empty());
+    _stack.push(state_t{_checkers, _special, _hash, _last_move, NO_PIECE, square_t{},  _halfmove, _repetition});
+
+    if (const squares_t ep = en_passant(); !ep.empty()) {
+        _hash ^= hashes::lookup::ep(ep.front().file());
+        _special.reset(ep);
+    }
+
+    _hash ^= hashes::lookup::side();
+    _last_move = move_t{};
+    _side = ~_side;
+    _checkers = NO_SQUARES;
+    _repetition = 1;
+}
+
+constexpr void position_t::undo_null_move() noexcept {
+    assert(_last_move == move_t{});
+    const state_t& state = _stack.top();
+    _side = ~_side;
+    _checkers = state.checkers;
+    _special = state.special;
+    _hash = state.hash;
+    _last_move = state.last_move;
     _halfmove = state.halfmove;
     _repetition = state.repetition;
     _stack.pop();

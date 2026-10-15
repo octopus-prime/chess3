@@ -7,6 +7,7 @@ module;
 #include <span>
 #include <string_view>
 #include <ranges>
+#include <cmath>
 
 module engine.negamax;
 
@@ -20,7 +21,7 @@ namespace chess {
 negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), killer(), history(), nodes_searched{} {}
 
 score_t negamax_t::operator()(ply_t depth) noexcept {
-    return search(depth, 0, MIN, MAX);
+    return search<true>(depth, 0, MIN, MAX);
 }
 
 size_t negamax_t::nodes() const noexcept {
@@ -48,20 +49,31 @@ std::span<move_t> negamax_t::extract_pv(const std::span<move_t, MAX_PLY> buffer,
     return buffer.first(length);
 }
 
+template <bool PV>  
 score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta) noexcept {
     if (depth == 0 || height == MAX_PLY - 1)
-        return qsearch(height, alpha, beta);
+        return qsearch<PV>(height, alpha, beta);
 
     ++nodes_searched;
 
+    const bool in_check = position.check();
+
     if (position.threefold_repetition() || position.fifty_move_rule() || position.insufficient_material()) {
-        if (position.check()) {
+        if (in_check) {
             std::array<move_t, 256> buffer;
             if (position.generate_all_moves(buffer).empty())
                 return score_e(MIN + height);
         }
         return DRAW;
     }
+
+    // // Mate-distance pruning (except at the root).
+    // if (height > 0) {
+    //     alpha = std::max(alpha, score_t{score_e(MIN + height)});
+    //     beta = std::min(beta, score_t{score_e(MAX - height - 1)});
+    //     if (alpha >= beta)
+    //         return alpha;
+    // }
 
     move_t best_move{};
     if (const auto entry = transposition.get(position.hash(), height)) {
@@ -91,7 +103,31 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
     const std::span<move_t> moves = position.generate_all_moves(buffer);
 
     if (moves.empty())
-        return position.checkers() ? score_e(MIN + height) : DRAW;
+        return in_check ? score_e(MIN + height) : DRAW;
+
+    // Futility pruning
+    {
+        // const auto margin = depth * 300;
+        const auto margin = depth * (300 + 25 * (best_move != move_t{}));
+        // const auto margin = 100 + 250 * depth;
+        if (!PV && depth <= 3 && !in_check && !beta.decisive() && evaluate() - margin >= beta)
+            return beta;
+
+        // if (!PV && depth >= 6 && !in_check && best_move == move_t{} && !alpha.decisive() && !beta.decisive())
+        //     depth--;
+    }
+
+    // Null Move Pruning
+    {
+        int R = 2 + (depth > 6);
+        if (!PV && depth > R + 1 && !in_check && !beta.decisive() && position.last_move() != move_t{} && !(position.by(position.side()) & ~position.by(position.side(), P, K)).empty() && moves.size() > 8 && evaluate() >= beta + 50) {
+            position.do_null_move();
+            const score_t score = -search<false>(depth - 1 - R, height + 1, score_e(-beta), score_e(-beta + 1));
+            position.undo_null_move();
+            if (score >= beta)
+                return beta;
+        }
+    }
 
     const auto get_score = [&](const move_t& move) {
         return position.see(move);
@@ -102,15 +138,23 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
     // auto ordered = detail::ordered_moves(position, moves, best_move, killer.get(height), get_score, get_history_score);
     auto ordered = detail::ordered_moves(position, moves, best_move, killer.get(height), history);
 
+    size_t move_count = 0;
     for (const move_t& move : ordered) {
+        ++move_count;
+        bool is_tactical = position.tactical(move);
         position.do_move(move);
         score_t score;
-        if (alpha > original_alpha) {
-            score = -search(depth - 1, height + 1, score_e(-alpha - 1), -alpha);
-            if (score > alpha)
-                score = -search(depth - 1, height + 1, -beta, -alpha);
+        if (alpha > original_alpha || (PV == false && move_count > 4)) {
+            int R = 0;
+            if (!PV && depth > 4 && move_count > 4 && !is_tactical && !position.check() && !in_check) {
+                R = std::logf(depth - 4) * std::logf(move_count - 4) + 0.67f;
+                R = std::clamp(R, 0, depth / 2);
+            }
+            score = -search<false>(depth - 1 - R, height + 1, score_e(-alpha - 1), -alpha);
+            if (score > alpha && (PV || R > 0))
+                score = -search<PV>(depth - 1, height + 1, -beta, -alpha);
         } else {
-            score = -search(depth - 1, height + 1, -beta, -alpha);
+            score = -search<PV>(depth - 1, height + 1, -beta, -alpha);
         }
         position.undo_move(move);
 
@@ -144,6 +188,7 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
     return alpha;
 }
 
+template <bool PV>
 score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     ++nodes_searched;
 
@@ -177,7 +222,7 @@ score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     if (in_check && moves.empty())
         return score_e(MIN + height);
 
-    if (!in_check) {
+    if (!PV && !in_check) {
         auto tail = std::ranges::partition(moves, [&](const move_t& move) {
             return move.promotion() != NO_TYPE || position.check(move) || position.see(move) >= 0;
         });
@@ -190,7 +235,7 @@ score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
 
     for (const move_t& move : moves) {
         position.do_move(move);
-        const score_t score = -qsearch(height + 1, -beta, -alpha);
+        const score_t score = -qsearch<PV>(height + 1, -beta, -alpha);
         position.undo_move(move);
 
         if (score >= beta)
