@@ -25,6 +25,9 @@ struct negamax_t final {
     size_t full() const noexcept;
     std::span<move_t> extract_pv(const std::span<move_t, MAX_PLY> buffer, ply_t max_length) noexcept;
 
+    void setup(const std::string_view fen, const std::string_view moves) noexcept;
+    void reset() noexcept;
+
 private:
     score_t asearch(const score_t eval, const ply_t depth) noexcept;
     template <bool PV>

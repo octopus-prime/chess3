@@ -26,6 +26,11 @@ struct killer_t final {
         return _buckets[height];
     }
 
+    constexpr void clear() noexcept {
+        for (auto& bucket : _buckets)
+            bucket.fill(move_t{});
+    }
+
 private:
     std::array<std::array<move_t, 2>, MAX_PLY> _buckets;
 };

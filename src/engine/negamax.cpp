@@ -22,7 +22,37 @@ import types.type;
 
 namespace chess {
 
+constexpr type_t type_lookup(const char ch) noexcept {
+    switch (ch) {
+        case 'q': return Q;
+        case 'r': return R;
+        case 'b': return B;
+        case 'n': return N;
+        default: return NO_TYPE;
+    }
+}
+
 negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), killer(), history(), nodes_searched{} {}
+
+void negamax_t::setup(const std::string_view fen, const std::string_view moves) noexcept {
+    position.setup(fen);
+    for (auto&& part : std::views::split(moves, ' ')) {
+        const std::string_view view{part};
+        const square_t from{file_e(view[0] - 'a'), rank_e(view[1] - '1')};
+        const square_t to{file_e(view[2] - 'a'), rank_e(view[3] - '1')};
+        const type_t promotion = view.size() > 4 ? type_lookup(view[4]) : NO_TYPE;
+        const move_t move{from, to, promotion};
+        position.do_move(move);
+    }
+}
+
+void negamax_t::reset() noexcept {
+    position.setup("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    transposition.clear();
+    killer.clear();
+    history.clear();
+    nodes_searched = 0;
+}
 
 size_t negamax_t::nodes() const noexcept {
     return nodes_searched;

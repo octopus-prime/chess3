@@ -43,6 +43,7 @@ struct position_t final {
   };
   constexpr position_t() noexcept;
   constexpr position_t(const std::string_view fen) noexcept;
+  constexpr void setup(const std::string_view fen) noexcept;
   constexpr piece_t at(const square_t square) const noexcept;
   constexpr squares_t by() const noexcept;
   constexpr squares_t by(const side_t side) const noexcept;

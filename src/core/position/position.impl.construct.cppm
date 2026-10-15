@@ -49,6 +49,22 @@ constexpr position_t::position_t(const std::string_view fen) noexcept :
     _halfmove{},
     _repetition{},
     _stack{} {
+    setup(fen);
+}
+
+constexpr void position_t::setup(const std::string_view fen) noexcept {
+    // Clear the current position state before setting up the new one
+    _piece_at_square.fill(NO_PIECE);
+    for (auto& occ : _occupied_by_type) occ = squares_t{};
+    for (auto& occ : _occupied_by_side) occ = squares_t{};
+    _checkers = squares_t{};
+    _special = squares_t{};
+    _hash = {};
+    _last_move = move_t{};
+    _side = WHITE;
+    _halfmove = 0;
+    _repetition = 0;
+    _stack.clear();
 
     auto fen_parts = fen | std::views::split(' ');
     auto fen_part = fen_parts.begin();
