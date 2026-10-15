@@ -15,10 +15,10 @@ import nnue.nnue;
 
 namespace chess {
 
-evaluator_t::evaluator_t() : _nnue(nnue::load()), _entries{} {
-    for (const side_e side : {WHITE, BLACK})
-        for (nnue::entry_t& entry : _entries[side])
-            _nnue->initialize(entry);
+evaluator_t::evaluator_t()
+    : _nnue(nnue::load()), _entries(std::make_unique<nnue::entry_t[]>(MAX_SIDE * MAX_SQUARE)) {
+    for (size_t index = 0; index < MAX_SIDE * MAX_SQUARE; ++index)
+        _nnue->initialize(_entries[index]);
 }
 
 score_t evaluator_t::evaluate(const position_t& position) noexcept {
@@ -29,7 +29,7 @@ score_t evaluator_t::evaluate(const position_t& position) noexcept {
 
 const nnue::entry_t& evaluator_t::refresh(const position_t& position, const side_e side) noexcept {
     auto king = position.by(side, K).front();
-    auto& entry = _entries[side][king];
+    auto& entry = _entries[static_cast<size_t>(side) * MAX_SQUARE + static_cast<size_t>(king)];
     uint16_t added_features[32];
     uint16_t removed_features[32];
     size_t added_count = 0;

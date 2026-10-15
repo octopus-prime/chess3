@@ -20,7 +20,7 @@ private:
     const nnue::entry_t& refresh(const position_t& position, const side_e side) noexcept;
 
     std::unique_ptr<nnue::nnue_t> _nnue;
-    nnue::entry_t _entries[MAX_SIDE][MAX_SQUARE];
+    std::unique_ptr<nnue::entry_t[]> _entries;
 };
 
 } // namespace chess
