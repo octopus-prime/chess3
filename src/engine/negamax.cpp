@@ -14,6 +14,7 @@ module;
 
 module engine.negamax;
 
+import engine.formatting;
 import core.attacks.generator;
 import engine.ordering;
 import types.side;
@@ -21,40 +22,7 @@ import types.type;
 
 namespace chess {
 
-std::ostream& operator<<(std::ostream& os, const chess::square_t square) {
-    return os << char('a' + square.file()) << (char)('1' + square.rank());
-}
-
-std::ostream& operator<<(std::ostream& os, const chess::move_t move) {
-    return os << move.from() << move.to();
-}
-
 negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), killer(), history(), nodes_searched{} {}
-negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), killer(), history(), nodes_searched{} {}
-
-score_t negamax_t::operator()(ply_t max_depth) noexcept {
-    using namespace std::chrono;
-    // return search(depth, 0, MIN, MAX);
-        std::array<chess::move_t, 256> buffer;
-    const auto start = steady_clock::now();
-    score_t score = qsearch(0, MIN, MAX);
-    for (chess::ply_t depth = 1; depth <= max_depth; ++depth) {
-        score = asearch(score, depth);
-        const auto end = steady_clock::now();
-        const auto ns = duration_cast<nanoseconds>(end - start).count();
-        const auto ms = duration_cast<milliseconds>(end - start).count();
-        const auto pv = extract_pv(buffer, depth);
-        const auto nodes = this->nodes();
-        const auto full = this->full();
-        std::cout << "depth: " << int{depth} << ", score: " << score << ", time: " << ms << " ms, nodes: " << nodes << " perf: " << nodes * 1e3 / ns << " MN/s, full: " << full << ", pv: ";
-        for (const auto& move : pv)
-            std::cout << move << " ";
-        std::cout << "\n";
-    }
-    return score;
-score_t negamax_t::operator()(ply_t depth) noexcept {
-    return search<true>(depth, 0, MIN, MAX);
-}
 
 size_t negamax_t::nodes() const noexcept {
     return nodes_searched;
@@ -79,6 +47,45 @@ std::span<move_t> negamax_t::extract_pv(const std::span<move_t, MAX_PLY> buffer,
         position.undo_move(buffer[i - 1]);
 
     return buffer.first(length);
+}
+
+score_t negamax_t::operator()(ply_t max_depth) noexcept {
+    using namespace std::chrono;
+    std::array<chess::move_t, 256> buffer;
+    char output[1024];
+    const auto start = steady_clock::now();
+    score_t score = qsearch<true>(0, MIN, MAX);
+    move_t best_move{};
+    for (chess::ply_t depth = 1; depth <= max_depth; ++depth) {
+        score = asearch(score, depth);
+        const auto end = steady_clock::now();
+        const auto ns = duration_cast<nanoseconds>(end - start).count();
+        const auto ms = duration_cast<milliseconds>(end - start).count();
+        const auto pv = extract_pv(buffer, depth);
+        const auto nodes = this->nodes();
+        const auto full = this->full();
+        const char* out = std::format_to(output, "info depth {} seldepth {} score {} nodes {} nps {} hashfull {} time {} pv {}\n",
+            depth, 0, score, nodes, size_t(1e9 * nodes / ns), full, ms, pv);
+        std::fwrite(output, sizeof(char), size_t(out - output), stdout);
+        if (!pv.empty())
+            best_move = pv.front();
+    }
+    const char* out_best = std::format_to(output, "bestmove {}\n", best_move);
+    std::fwrite(output, sizeof(char), size_t(out_best - output), stdout);
+    return score;
+}
+
+score_t negamax_t::asearch(const score_t eval, const ply_t depth) noexcept {
+    const score_t delta = score_e(25 + 2 * depth);
+    const score_t alpha = eval - delta;
+    const score_t beta = eval + delta;
+    score_t score = search<true>(depth, 0, alpha, beta);
+    if (score <= alpha) {
+        score = search<true>(depth, 0, MIN, beta);
+    } else if (score >= beta) {
+        score = search<true>(depth, 0, alpha, MAX);
+    }
+    return score;
 }
 
 template <bool PV>  
@@ -171,10 +178,7 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
     auto ordered = detail::ordered_moves(position, moves, best_move, killer.get(height), history);
 
     size_t move_count = 0;
-    size_t move_count = 0;
     for (const move_t& move : ordered) {
-        ++move_count;
-        bool is_tactical = position.tactical(move);
         ++move_count;
         bool is_tactical = position.tactical(move);
         position.do_move(move);
@@ -280,22 +284,6 @@ score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     }
 
     return alpha;
-}
-
-score_t negamax_t::asearch(const score_t eval, const ply_t depth) noexcept {
-    const score_t delta = score_e(25 + 2 * depth);
-    score_t window_alpha = eval - delta;
-    score_t window_beta = eval + delta;
-
-    score_t score = search(depth, 0, window_alpha, window_beta);
-    // if (score == 32100)
-    //     return 32100;
-    if (score <= window_alpha) {
-        score = search(depth, 0, MIN, window_beta);
-    } else if (score >= window_beta) {
-        score = search(depth, 0, window_alpha, MAX);
-    }
-    return score;
 }
 
 score_t negamax_t::evaluate() noexcept {

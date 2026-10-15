@@ -1,40 +1,8 @@
 #include <array>
-#include <chrono>
 #include <iostream>
-#include <span>
 #include <string_view>
 
 import engine.negamax;
-
-// std::ostream& operator<<(std::ostream& os, const chess::square_t square) {
-//     return os << char('a' + square.file()) << (char)('1' + square.rank());
-// }
-
-// std::ostream& operator<<(std::ostream& os, const chess::move_t move) {
-//     return os << move.from() << move.to();
-// }
-
-void test_negamax(std::string_view fen, chess::ply_t max_depth) {
-    using namespace std::chrono;
-    chess::negamax_t negamax{fen};
-    negamax(max_depth);
-    // std::array<chess::move_t, 256> buffer;
-    // const auto start = steady_clock::now();
-    // for (chess::ply_t depth = 0; depth < max_depth;) {
-    //     ++depth;
-    //     const auto score = negamax(depth);
-    //     const auto end = steady_clock::now();
-    //     const auto ns = duration_cast<nanoseconds>(end - start).count();
-    //     const auto ms = duration_cast<milliseconds>(end - start).count();
-    //     const auto pv = negamax.extract_pv(buffer, depth);
-    //     const auto nodes = negamax.nodes();
-    //     const auto full = negamax.full();
-    //     std::cout << "depth: " << int{depth} << ", score: " << score << ", time: " << ms << " ms, nodes: " << nodes << " perf: " << nodes * 1e3 / ns << " MN/s, full: " << full << ", pv: ";
-    //     for (const auto& move : pv)
-    //         std::cout << move << " ";
-    //     std::cout << "\n";
-    // }
-}
 
 int main() {
     constexpr std::array fens = {
@@ -76,7 +44,7 @@ int main() {
     constexpr chess::ply_t depth = 12;
     for (const std::string_view fen : fens) {
         std::cout << "FEN: " << fen << "\n";
-        test_negamax(fen, depth);
+        chess::negamax_t{fen}(depth);
         std::cout << "\n";
     }
 }
