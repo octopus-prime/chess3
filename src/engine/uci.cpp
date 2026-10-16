@@ -7,6 +7,7 @@ module;
 #include <string_view>
 #include <iostream>
 #include <ranges>
+#include <chrono>
 
 module engine.uci;
 
@@ -49,13 +50,15 @@ void uci_t::operator()(std::istream& stream) noexcept {
 }
 
 void uci_t::uci() noexcept {
-    constexpr std::string_view buffer = "id name chess\nid author me\nuciok\n";
+    constexpr std::string_view buffer = "id name chess3\nid author me\nuciok\n";
     std::fwrite(buffer.data(), sizeof(char), buffer.size(), stdout);
+    std::fflush(stdout);
 }
 
 void uci_t::isready() noexcept {
     constexpr std::string_view buffer = "readyok\n";
     std::fwrite(buffer.data(), sizeof(char), buffer.size(), stdout);
+    std::fflush(stdout);
 }
 
 void uci_t::ucinewgame() noexcept {
@@ -86,7 +89,56 @@ void uci_t::position(const std::string_view args) noexcept {
 }
 
 void uci_t::go(const std::string_view args) noexcept {
-    // engine.search();
+    auto parts = std::views::split(args, ' ');
+    auto part = parts.begin();
+
+    if (std::string_view(*part).starts_with("depth"sv)) {
+        part++; //depth
+        std::string_view depth_part {*part++};
+        ply_t depth;
+        std::from_chars(&*depth_part.begin(), &*depth_part.end(), depth);
+
+        engine(depth, std::chrono::hours(24));
+        engine.clear();
+        return;
+    }
+
+    part++; //wtime
+    std::string_view wtime_part {*part++};
+    std::int64_t wtime;
+    std::from_chars(&*wtime_part.begin(), &*wtime_part.end(), wtime);
+
+    part++; //btime
+    std::string_view btime_part {*part++};
+    std::int64_t btime;
+    std::from_chars(&*btime_part.begin(), &*btime_part.end(), btime);
+
+    part++; //winc
+    std::string_view winc_part {*part++};
+    std::int64_t winc;
+    std::from_chars(&*winc_part.begin(), &*winc_part.end(), winc);
+
+    part++; //binc
+    std::string_view binc_part {*part++};
+    std::int64_t binc;
+    std::from_chars(&*binc_part.begin(), &*binc_part.end(), binc);
+
+    auto timeleft = (engine.side() == WHITE) ? wtime : btime;
+    auto timeinc = (engine.side() == WHITE) ? winc : binc;
+    auto timetogo = timeinc;
+
+    if (part != parts.end()) {
+        part++; //movestogo
+        std::string_view movestogo_part {*part++};
+        std::int64_t movestogo;
+        std::from_chars(&*movestogo_part.begin(), &*movestogo_part.end(), movestogo);
+        timetogo += timeleft / (movestogo + 1);
+    } else {
+        timetogo += timeleft * 4 / 100;
+    }
+
+    engine(255, std::chrono::milliseconds(timetogo));
+    engine.clear();
 }
 
 void uci_t::quit() noexcept {

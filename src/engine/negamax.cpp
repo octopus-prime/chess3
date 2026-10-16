@@ -32,7 +32,7 @@ constexpr type_t type_lookup(const char ch) noexcept {
     }
 }
 
-negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), killer(), history(), nodes_searched{} {}
+negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), killer(), history(), nodes_searched{}, end_time{} {}
 
 void negamax_t::setup(const std::string_view fen, const std::string_view moves) noexcept {
     position.setup(fen);
@@ -48,6 +48,10 @@ void negamax_t::setup(const std::string_view fen, const std::string_view moves) 
 
 void negamax_t::reset() noexcept {
     position.setup("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+    clear();
+}
+
+void negamax_t::clear() noexcept {
     transposition.clear();
     killer.clear();
     history.clear();
@@ -60,6 +64,10 @@ size_t negamax_t::nodes() const noexcept {
 
 size_t negamax_t::full() const noexcept {
     return transposition.full();
+}
+
+side_t negamax_t::side() const noexcept {
+    return position.side();
 }
 
 std::span<move_t> negamax_t::extract_pv(const std::span<move_t, MAX_PLY> buffer, ply_t max_length) noexcept {
@@ -79,15 +87,18 @@ std::span<move_t> negamax_t::extract_pv(const std::span<move_t, MAX_PLY> buffer,
     return buffer.first(length);
 }
 
-score_t negamax_t::operator()(ply_t max_depth) noexcept {
+score_t negamax_t::operator()(const ply_t max_depth, const std::chrono::steady_clock::duration duration) noexcept {
     using namespace std::chrono;
     std::array<chess::move_t, 256> buffer;
     char output[1024];
     const auto start = steady_clock::now();
+    end_time = start + duration;
     score_t score = qsearch<true>(0, MIN, MAX);
     move_t best_move{};
     for (chess::ply_t depth = 1; depth <= max_depth; ++depth) {
         score = asearch(score, depth);
+        if (score.ignore())
+            break;
         const auto end = steady_clock::now();
         const auto ns = duration_cast<nanoseconds>(end - start).count();
         const auto ms = duration_cast<milliseconds>(end - start).count();
@@ -97,11 +108,13 @@ score_t negamax_t::operator()(ply_t max_depth) noexcept {
         const char* out = std::format_to(output, "info depth {} seldepth {} score {} nodes {} nps {} hashfull {} time {} pv {}\n",
             depth, 0, score, nodes, size_t(1e9 * nodes / ns), full, ms, pv);
         std::fwrite(output, sizeof(char), size_t(out - output), stdout);
+        std::fflush(stdout);
         if (!pv.empty())
             best_move = pv.front();
     }
     const char* out_best = std::format_to(output, "bestmove {}\n", best_move);
     std::fwrite(output, sizeof(char), size_t(out_best - output), stdout);
+    std::fflush(stdout);
     return score;
 }
 
@@ -110,6 +123,8 @@ score_t negamax_t::asearch(const score_t eval, const ply_t depth) noexcept {
     const score_t alpha = eval - delta;
     const score_t beta = eval + delta;
     score_t score = search<true>(depth, 0, alpha, beta);
+    if (score.ignore())
+        return IGNORE;
     if (score <= alpha) {
         score = search<true>(depth, 0, MIN, beta);
     } else if (score >= beta) {
@@ -120,6 +135,9 @@ score_t negamax_t::asearch(const score_t eval, const ply_t depth) noexcept {
 
 template <bool PV>  
 score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta) noexcept {
+    if (std::chrono::steady_clock::now() >= end_time)
+        return IGNORE;
+
     if (depth == 0 || height == MAX_PLY - 1)
         return qsearch<PV>(height, alpha, beta);
 
@@ -193,6 +211,8 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
             position.do_null_move();
             const score_t score = -search<false>(depth - 1 - R, height + 1, score_e(-beta), score_e(-beta + 1));
             position.undo_null_move();
+            if (score.ignore())
+                return IGNORE;
             if (score >= beta)
                 return beta;
         }
@@ -220,12 +240,15 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
                 R = std::clamp(R, 0, depth / 2);
             }
             score = -search<false>(depth - 1 - R, height + 1, score_e(-alpha - 1), -alpha);
-            if (score > alpha && (PV || R > 0))
+            if (score > alpha && (PV || R > 0) && !score.ignore())
                 score = -search<PV>(depth - 1, height + 1, -beta, -alpha);
         } else {
             score = -search<PV>(depth - 1, height + 1, -beta, -alpha);
         }
         position.undo_move(move);
+
+        if (score.ignore())
+            return IGNORE;
 
         if (score >= beta) {
             transposition.put(position.hash(), move, beta, LOWER, depth, height);
