@@ -50,14 +50,12 @@ void uci_t::operator()(std::istream& stream) noexcept {
 
 void uci_t::uci() noexcept {
     constexpr std::string_view buffer = "id name chess3\nid author me\nuciok\n";
-    std::fwrite(buffer.data(), sizeof(char), buffer.size(), stdout);
-    std::fflush(stdout);
+    std::cout << buffer << std::flush;
 }
 
 void uci_t::isready() noexcept {
     constexpr std::string_view buffer = "readyok\n";
-    std::fwrite(buffer.data(), sizeof(char), buffer.size(), stdout);
-    std::fflush(stdout);
+    std::cout << buffer << std::flush;
 }
 
 void uci_t::ucinewgame() noexcept {

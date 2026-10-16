@@ -291,8 +291,8 @@ build independent test targets in parallel.
 - `chess.evaluator`: NNUE evaluator checks.
 - `chess.mates`: mate-in-3/5/6/8 regressions with exact mate scores.
 - `chess.uci`: in-process command/response checks for identification, readiness,
-  new games, unknown commands, EOF and quit. Output capture uses POSIX file
-  descriptors because the engine writes directly to C stdout.
+  new games, unknown commands, EOF and quit. Responses use `std::cout`, captured
+  by the tests with a standard C++ string stream.
 - `chess.engine`: all Engine suites, including the longer mate regressions.
 
 CTest is available through VS Code's CMake Tools test integration. To run a suite
