@@ -14,6 +14,7 @@ import engine.ordering;
 import engine.history;
 import engine.killer;
 import engine.transposition;
+import engine.evaluator;
 import core.position;
 import types.piece;
 import types.hash;
@@ -378,28 +379,93 @@ bool test_search_draws() {
     return passed;
 }
 
+bool test_selective_search() {
+    using namespace chess;
+    struct case_t {
+        std::string_view fen;
+        move_t best;
+        size_t max_nodes;
+    };
+    constexpr std::array cases{
+        case_t{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+               {e2, e4}, 200000},
+        case_t{"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+               {e2, a6}, 400000},
+        case_t{"r1b2rk1/2q1b1pp/p2ppn2/1p6/3QP3/1BN1B3/PPP3PP/R4RK1 w - - 0 1",
+               {c3, d5}, 200000},
+        case_t{"8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+               {b4, f4}, 40000}
+    };
+    bool passed = true;
+    for (const auto& test : cases) {
+        negamax_t search{test.fen};
+        const score_t score = test_search(search, 9);
+        passed &= test_support::check(!score.ignore(), "selective depth nine completes");
+        passed &= test_support::check(search.nodes() > 0 && search.nodes() < test.max_nodes,
+                                      "selective search stays within the node budget");
+        std::array<move_t, MAX_PLY> pv_buffer;
+        const auto pv = search.extract_pv(pv_buffer, 9);
+        passed &= test_support::check(!pv.empty() && pv.front() == test.best,
+                                      "selective search preserves the reference best move");
+        position_t position{test.fen};
+        std::array<move_t, 256> moves;
+        for (const move_t move : pv) {
+            const auto legal = position.generate_all_moves(moves);
+            const bool valid = std::ranges::find(legal, move) != legal.end();
+            passed &= test_support::check(valid, "selective search PV contains only legal moves");
+            if (!valid)
+                break;
+            position.do_move(move);
+        }
+    }
+    return passed;
+}
+
+bool test_search_timeout() {
+    using namespace chess;
+    using namespace std::chrono;
+    constexpr std::string_view fen{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"};
+    negamax_t search{fen};
+    const auto start = steady_clock::now();
+    const score_t score = search(std::numeric_limits<ply_t>::max(), milliseconds{20});
+    const auto elapsed = steady_clock::now() - start;
+    bool passed = test_support::check(!score.ignore(), "timeout preserves a completed search score");
+    passed &= test_support::check(elapsed < seconds{1}, "full and quiescence search respect the deadline");
+    passed &= test_support::check(search.nodes() > 0, "timed search visits nodes");
+
+    evaluator_t evaluator;
+    const score_t expected = evaluator.evaluate(position_t{fen});
+    passed &= test_support::check(test_search(search, 0) == expected,
+                                  "timeout restores the root position");
+    passed &= test_support::check(search(std::numeric_limits<ply_t>::max(), milliseconds{0}) == expected,
+                                  "zero-time search returns the root evaluation");
+    passed &= test_support::check(search.nodes() == 0, "node count resets for each search");
+    return passed;
+}
+
 bool run_mate_tests() {
     using namespace chess;
     struct case_t {
         std::string_view fen;
         ply_t depth;
+        ply_t mate_plies;
         std::string_view description;
     };
     constexpr std::array cases{
-        case_t{"1k1r4/pp1b1R2/3q2pp/4p3/2B5/4Q3/PPP2B2/2K5 b - -", 5,
+        case_t{"1k1r4/pp1b1R2/3q2pp/4p3/2B5/4Q3/PPP2B2/2K5 b - -", 5, 5,
                "mate in 3 at depth 5"},
-        case_t{"4r1k1/pp4pp/8/q1p1N3/5P2/1P4P1/P6P/3Q2K1 w - -", 9,
+        case_t{"4r1k1/pp4pp/8/q1p1N3/5P2/1P4P1/P6P/3Q2K1 w - -", 9, 9,
                "mate in 5 at depth 9"},
-        case_t{"n1N3br/2p1Bpkr/1pP2R1b/pP1p1PpR/Pp4P1/1P6/1K1P4/8 w - -", 11,
-               "mate in 6 at depth 11"}
-        // case_t{"r3k3/1pp1p1Kp/1p2P3/1p6/2N5/P2P2pr/5B1p/3Q1R2 w q -", 15,
+        case_t{"n1N3br/2p1Bpkr/1pP2R1b/pP1p1PpR/Pp4P1/1P6/1K1P4/8 w - -", 15, 11,
+               "mate in 6 at selective depth 15"}
+        // case_t{"r3k3/1pp1p1Kp/1p2P3/1p6/2N5/P2P2pr/5B1p/3Q1R2 w q -", 15, 15,
         //        "mate in 8 at depth 15"}
     };
     bool passed = true;
     for (const auto& test : cases) {
         negamax_t search{test.fen};
         const score_t score = test_search(search, test.depth);
-        const score_t expected{score_e(MAX - test.depth)};
+        const score_t expected{score_e(MAX - test.mate_plies)};
         if (score != expected)
             std::cerr << test.description << ": expected " << int(score_e(expected))
                       << ", got " << int(score_e(score)) << '\n';
@@ -429,6 +495,8 @@ bool run_negamax_tests() {
     passed &= test_support::check(test_killer_heights(), "killers support the maximum ply height");
     passed &= test_history_ordering();
     passed &= test_search_draws();
+    passed &= test_selective_search();
+    passed &= test_search_timeout();
     for (const auto fen : {"k7/4P3/8/8/8/8/8/7K w - - 0 1",
                           "7k/8/8/8/8/8/4p3/K7 b - - 0 1"}) {
         chess::negamax_t search{fen};
@@ -443,8 +511,11 @@ bool run_negamax_tests() {
     chess::negamax_t mate{"k7/1Q6/2K5/8/8/8/8/8 b - - 0 1"};
     passed &= test_support::check(test_search(mate, 0) == chess::MIN,
                                   "quiescence detects checkmate without stand pat");
-    passed &= test_support::check(test_search(mate, chess::MAX_PLY - 2) == chess::MIN,
+    passed &= test_support::check(
+        mate(std::numeric_limits<chess::ply_t>::max(), std::chrono::seconds{1}) == chess::MIN,
                                   "search accepts the maximum ply depth");
+    passed &= test_support::check(mate.nodes() == chess::MAX_PLY,
+                                  "depth 255 completes without counter wraparound");
     chess::negamax_t mate_in_one{"k7/8/1QK5/8/8/8/8/8 w - - 0 1"};
     passed &= test_support::check(test_search(mate_in_one, 1) == chess::MAX - 1,
                                   "search scores mate in one at the correct distance");

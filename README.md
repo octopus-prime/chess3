@@ -192,8 +192,8 @@ it skips stand pat, searches all legal evasions, and scores checkmate if none ex
 Engine search depths, heights, principal-variation lengths, history bonuses,
 killer indices, and transposition-table depths use `ply_t` (`uint8_t`).
 Search stops extending at height 255 to prevent height wraparound. At that
-horizon quiescence returns static evaluation in check or the incoming alpha
-bound outside check, without generating moves or detecting checkmate.
+horizon quiescence returns static evaluation without generating moves or detecting checkmate.
+The iterative-deepening counter uses a wider integer so a requested depth of 255 terminates.
 The demo prints depths numerically.
 
 `position_t::tactical(move)` classifies a legal move in the position before it is
@@ -223,7 +223,8 @@ Quiet moves in the fourth phase use [engine.history](src/engine/history.cppm), a
 tactical moves retain their SEE ordering. History does not affect the
 nonnegative tactical-score partition or TT/killer priority.
 A quiet beta cutoff rewards its move and penalizes previously searched quiet
-moves at that node, after restoring the parent position. The depth bonus is
+moves at that node, after restoring the parent position. A fixed-size list excludes
+pruned moves from these penalties. The depth bonus is
 `min(16 * depth * depth, 2048)`, calculated with a bounded depth to avoid overflow.
 Updates use history gravity (`value += bonus - value * abs(bonus) / 16384`) with
 the bonus clamped to `[-16384, 16384]` and arithmetic in `int`. Captures and
@@ -232,25 +233,58 @@ across iterative-deepening calls; constructing a new search starts with zero his
 
 ## Selective search
 
-[negamax.cpp](src/engine/negamax.cpp) currently uses reverse futility pruning at
-Non-PV nodes through depth three, outside check and decisive beta windows,
-with a margin of `depth * (300 + 25 * has_tt_move)` centipawns.
+[negamax.cpp](src/engine/negamax.cpp) deliberately trades exhaustive coverage for
+greater selective depth. Nominal depth is not a guarantee that every line is
+searched that deeply; quiet sacrifices and zugzwang remain potential weaknesses.
 
-Null-move pruning requires a Non-PV node outside check, a non-decisive beta,
-a preceding real move, non-pawn/non-king material for the moving side, more
-than eight legal moves, and static evaluation at least `beta + 50` centipawns.
-It searches a null window with `R = 2 + (depth > 6)` and depth `depth - 1 - R`,
-when `depth > R + 1`. A fail-high returns beta directly: this is guarded,
-not verified, null-move pruning. The guards do not guarantee protection
-against zugzwang or missed tactics.
+- Reverse futility pruning applies at Non-PV nodes through depth seven, outside
+  check and decisive beta windows, with an `80 * depth` centipawn margin.
+- Null-move pruning requires a Non-PV node at depth three or greater, outside
+  check, a non-decisive beta, a preceding real move, non-pawn/non-king material,
+  more than eight legal moves, and static evaluation at least beta. Its reduction
+  is `2 + depth / 3 + min((static_eval - beta) / 200, 3)`, capped at `depth - 1`.
+  This is guarded, not verified, null-move pruning.
+- At shallow Non-PV nodes, late quiet moves are skipped after `3 + depth * depth`
+  quiet candidates (through depth five), or when static evaluation plus
+  `100 + 120 * depth` cannot reach alpha (through depth three). Losing tactical
+  moves with SEE below `-100 * depth` may be skipped through depth four.
+  These rules retain at least one searched move and protect evasions, checking
+  moves, promotions, killers, advanced pawn pushes, and decisive alpha windows.
+- Late-move reductions start at depth three, after the third move at PV nodes
+  and the second at Non-PV nodes. Quiet non-killer moves are reduced only outside
+  check, without giving check, and without an advanced pawn push or decisive alpha.
+  The reduction is `int(0.75 + log(depth) * log(move_count) / 2.25)`, plus one
+  at Non-PV nodes, minus `history / 8192`, clamped to `[1, depth - 2]`.
+  An alpha improvement triggers a full-depth null-window re-search, followed by
+  a full-window PV search when necessary.
+- Quiescence outside check filters negative-SEE captures and captures whose
+  material gain plus a 150-centipawn margin cannot reach alpha. Promotions and
+  checking moves are exempt. Sorting uses inexpensive victim/attacker values
+  rather than repeatedly running SEE. In check, every legal evasion is retained.
+- Mate-distance bounds constrain non-root nodes. TT bounds cause direct cutoffs
+  only at Non-PV nodes rather than narrowing a PV window. Aspiration starts at
+  depth five for non-mate scores and repeatedly widens failed bounds until the
+  result fits or the full window is reached.
 
-Late-move reductions apply to Non-PV quiet moves after the fourth move, at
-depths above four, when neither the parent nor child is in check.
-The reduction is the integer truncation of
-`log(depth - 4) * log(move_count - 4) + 0.67`, clamped to `[0, depth / 2]`.
-A reduced result above alpha is re-searched at full depth.
-Non-PV quiescence outside check discards negative-SEE moves except promotions
-and checking moves. Mate-distance pruning is currently commented out.
+Clock polling is amortized over 1024 nodes in both full search and quiescence.
+Aborted iterations restore the position and keep the last completed score and
+best move; if no iteration completes, a legal root move is available as fallback.
+Node counts restart with each public search call. These changes introduce no
+additional heap-owned search storage.
+
+A local Release-build comparison on four fixed positions gave the following
+completed depths with a one-second search budget (not a playing-strength/Elo test):
+
+| Position | Previous depth | Selective depth |
+|---|---:|---:|
+| Initial position | 8 | 16 |
+| Kiwipete | 8 | 14 |
+| Middlegame (`r1b2rk1/2q1b1pp/...`) | 9 | 20 |
+| Rook endgame (`8/2p5/3p4/...`) | 14 | 23-24 |
+
+At fixed depth nine, node counts fell from 1,984,749 / 4,737,413 / 1,500,500 /
+84,624 to 19,207 / 40,482 / 46,096 / 7,476 respectively. The reference best
+moves at that depth remained `e2e4`, `e2a6`, `c3d5`, and `b4f4`.
 
 ## Tests
 
@@ -287,9 +321,12 @@ build independent test targets in parallel.
   history gravity bounds and piece/square isolation, and history ordering without
   changing capture-phase classification. Ordering tests also check that the
   underlying buffer prefix matches the searched sequence, allowing cutoff
-  penalties to scan only previously searched moves.
+  bookkeeping to distinguish searched moves. Search regressions check fixed-depth
+  node budgets, reference best moves, legal PVs, deadline handling and root restoration.
 - `chess.evaluator`: NNUE evaluator checks.
-- `chess.mates`: mate-in-3/5/6/8 regressions with exact mate scores.
+- `chess.mates`: mate-in-3/5/6 regressions with exact mate scores. The selective
+  search uses depths 5/9/15 respectively; the mate-in-6 distance remains 11 plies,
+  independent of its larger search-depth budget. The mate-in-8 case remains disabled.
 - `chess.uci`: in-process command/response checks for identification, readiness,
   new games, unknown commands, EOF and quit. Responses use `std::cout`, captured
   by the tests with a standard C++ string stream.
@@ -300,8 +337,8 @@ directly from the `build/` directory, use `./chess_types_tests` for Types,
 `./chess_core_tests lookup`, `./chess_core_tests position`, or
 `./chess_core_tests perft`; no argument runs all Core suites.
 `./chess_engine_tests` runs all Engine suites. The `mates` selector
-(`chess.mates` in CMake Tools) runs the longer mate-in-3/5/6/8 search regressions,
-using iterative deepening through depths 5/9/11/15 and checking exact mate
+(`chess.mates` in CMake Tools) runs the longer mate-in-3/5/6 search regressions,
+using internal iterative deepening through depths 5/9/15 and checking exact mate
 distances and legal PV moves. The `negamax` selector runs the shorter search tests.
 The Core `position` suite also checks null-move hash/EP/last-move round trips,
 halfmove-counter preservation, and repetition isolation across null moves.
