@@ -2,6 +2,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <string_view>
 #include <type_traits>
 
 #include "test_support.hpp"
@@ -38,6 +39,51 @@ constexpr bool test_coordinates() {
         if (square_t{square.file(), square.rank()} != square)
             return false;
     return square_t{a, _1} == a1 && square_t{h, _8} == h8;
+}
+
+constexpr bool test_string_view_pieces() {
+    using namespace chess;
+    constexpr std::string_view symbols{"pnbrqkPNBRQK"};
+    constexpr std::array<type_t, 6> types{P, N, B, R, Q, K};
+    constexpr std::array<piece_t, 12> pieces{BP, BN, BB, BR, BQ, BK, WP, WN, WB, WR, WQ, WK};
+    for (size_t index = 0; index < symbols.size(); ++index) {
+        const auto token = symbols.substr(index, 1);
+        const piece_t piece{token};
+        if (piece != pieces[index] || piece.type() != types[index % types.size()] ||
+            piece.side() != (index < types.size() ? BLACK : WHITE))
+            return false;
+        if (index < types.size() && type_t{token} != types[index])
+            return false;
+    }
+    for (const auto token : {std::string_view{}, std::string_view{"x"},
+                             std::string_view{"Q"}, std::string_view{"-"}})
+        if (type_t{token} != NO_TYPE)
+            return false;
+    return piece_t{std::string_view{"?"}} == NO_PIECE &&
+        type_t{std::string_view{"queen"}} == Q &&
+        piece_t{std::string_view{"Queen"}} == WQ;
+}
+
+constexpr bool test_string_view_coordinates() {
+    using namespace chess;
+    constexpr std::string_view files{"abcdefgh"};
+    constexpr std::string_view ranks{"12345678"};
+    for (size_t file = 0; file < MAX_FILE; ++file) {
+        if (file_t{files.substr(file, 1)} != file_e(file))
+            return false;
+        for (size_t rank = 0; rank < MAX_RANK; ++rank) {
+            if (rank_t{ranks.substr(rank, 1)} != rank_e(rank))
+                return false;
+            const std::array text{files[file], ranks[rank]};
+            const square_t square{std::string_view{text.data(), text.size()}};
+            if (square != square_t{file_e(file), rank_e(rank)} ||
+                square.file() != file_e(file) || square.rank() != rank_e(rank))
+                return false;
+        }
+    }
+    return file_t{std::string_view{"e4"}} == e &&
+        rank_t{std::string_view{"4suffix"}} == _4 &&
+        square_t{std::string_view{"e4suffix"}} == e4;
 }
 
 constexpr bool test_square_sets() {
@@ -126,6 +172,8 @@ constexpr bool test_plies() {
 
 static_assert(test_piece_and_side());
 static_assert(test_coordinates());
+static_assert(test_string_view_pieces());
+static_assert(test_string_view_coordinates());
 static_assert(test_square_sets());
 static_assert(test_scores());
 static_assert(test_hashes());
@@ -136,6 +184,8 @@ static_assert(test_plies());
 int main() {
     bool passed = test_support::check(test_piece_and_side(), "piece and side encoding");
     passed &= test_support::check(test_coordinates(), "coordinate round trips");
+    passed &= test_support::check(test_string_view_pieces(), "piece and type construction from string views");
+    passed &= test_support::check(test_string_view_coordinates(), "file, rank and square construction from string views");
     passed &= test_support::check(test_square_sets(), "square sets and iteration");
     passed &= test_support::check(test_scores(), "score arithmetic and classification");
     passed &= test_support::check(test_hashes(), "hash width and reversible XOR updates");

@@ -3,6 +3,7 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <string_view>
 
 export module types.piece:decl;
 
@@ -21,6 +22,7 @@ struct piece_t final {
   constexpr piece_t() noexcept;
   constexpr piece_t(const piece_e piece) noexcept;
   constexpr piece_t(const side_t side, const type_t type) noexcept;
+  constexpr piece_t(const std::string_view piece) noexcept;
   constexpr operator piece_e() const noexcept;
   constexpr side_t side() const noexcept;
   constexpr type_t type() const noexcept;

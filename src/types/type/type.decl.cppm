@@ -2,6 +2,8 @@ module;
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
+#include <string_view>
 
 export module types.type:decl;
 
@@ -12,7 +14,15 @@ enum type_e : uint8_t {
     P, N, B, R, Q, K
 };
 
-using type_t = type_e;
+struct type_t final {
+  constexpr type_t() noexcept;
+  constexpr type_t(const type_e type) noexcept;
+  constexpr type_t(const std::string_view type) noexcept;
+  constexpr operator type_e() const noexcept;
+
+private:
+  std::underlying_type_t<type_e> _index;
+};
 
 constexpr size_t MAX_TYPE = 8;
 

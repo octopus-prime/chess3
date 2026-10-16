@@ -41,8 +41,43 @@ bool test_null_moves();
 bool test_null_move_repetition();
 constexpr bool test_insufficient_material();
 
+constexpr bool test_string_view_moves() {
+    struct case_t {
+        std::string_view text;
+        move_t expected;
+    };
+    constexpr std::array cases{
+        case_t{"e2e4", {e2, e4}},
+        case_t{"g8f6", {g8, f6}},
+        case_t{"e1g1", {e1, g1}},
+        case_t{"e8c8", {e8, c8}},
+        case_t{"e5d6", {e5, d6}},
+        case_t{"a7a8q", {a7, a8, Q}},
+        case_t{"b7a8r", {b7, a8, R}},
+        case_t{"c7d8b", {c7, d8, B}},
+        case_t{"h7h8n", {h7, h8, N}},
+        case_t{"a2a1q", {a2, a1, Q}},
+        case_t{"b2a1r", {b2, a1, R}},
+        case_t{"c2d1b", {c2, d1, B}},
+        case_t{"h2h1n", {h2, h1, N}}
+    };
+    for (const auto& test : cases) {
+        const move_t move{test.text};
+        if (move != test.expected || move.from() != test.expected.from() ||
+            move.to() != test.expected.to() || move.promotion() != test.expected.promotion())
+            return false;
+    }
+    constexpr std::array text{'x', 'a', '7', 'a', '8', 'n', 'y'};
+    const std::string_view slice{text.data() + 1, 5};
+    return move_t{slice} == move_t{a7, a8, N} &&
+        move_t{slice.substr(0, 4)} == move_t{a7, a8};
+}
+
+static_assert(test_string_view_moves());
+
 bool run_position_tests() {
     bool passed = test_support::check(test_pin_detection_after_moves(), "pin detection after move and undo");
+    passed &= test_support::check(test_string_view_moves(), "UCI move construction from string views");
     passed &= test_support::check(test_checkers_and_pinned(), "checkers and pinned lifecycle");
     passed &= test_support::check(test_snipers_and_blockers(), "snipers and blockers");
     passed &= test_support::check(test_castling_moves(), "castling execution and rights lifecycle");

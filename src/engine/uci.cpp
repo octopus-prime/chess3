@@ -27,8 +27,7 @@ uci_t::uci_t() : engine{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 
 
 void uci_t::operator()(std::istream& stream) noexcept {
     std::array<char, 4096> buffer;
-    for(;;) {
-        stream.getline(buffer.data(), buffer.size());
+    while (stream.getline(buffer.data(), buffer.size())) {
         std::string_view line{buffer.data()};
         if (line.starts_with("ucinewgame"sv))
             ucinewgame();
@@ -45,7 +44,7 @@ void uci_t::operator()(std::istream& stream) noexcept {
             go(line);
         }
         else if (line.starts_with("quit"sv))
-            quit();
+            return;
     }
 }
 
@@ -137,12 +136,8 @@ void uci_t::go(const std::string_view args) noexcept {
         timetogo += timeleft * 4 / 100;
     }
 
-    engine(255, std::chrono::milliseconds(timetogo));
+    engine(MAX_PLY - 2, std::chrono::milliseconds(timetogo));
     engine.clear();
-}
-
-void uci_t::quit() noexcept {
-    std::exit(0);
 }
 
 } // namespace chess

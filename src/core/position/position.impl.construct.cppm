@@ -17,18 +17,6 @@ namespace chess {
 
 constexpr position_t::position_t() noexcept : position_t("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") {}
 
-constexpr piece_t piece_lookup(const char ch) noexcept {
-    switch (ch) {
-        case 'P': return WP; case 'p': return BP;
-        case 'N': return WN; case 'n': return BN;
-        case 'B': return WB; case 'b': return BB;
-        case 'R': return WR; case 'r': return BR;
-        case 'Q': return WQ; case 'q': return BQ;
-        case 'K': return WK; case 'k': return BK;
-        default: return NO_PIECE;
-    }
-}
-
 constexpr squares_t castle_lookup(const char ch) noexcept {
     switch (ch) {
         case 'K': return squares_t{h1}; case 'k': return squares_t{h8};
@@ -77,7 +65,7 @@ constexpr void position_t::setup(const std::string_view fen) noexcept {
                 file_index += ch - '0';
             } else {
                 const square_t square{file_e(file_index++), rank_e(7 - rank_index)};
-                const piece_t piece{piece_lookup(ch)};
+                const piece_t piece{std::string_view(&ch, 1)};
                 _hash ^= hashes::lookup::piece(piece, square);
                 _piece_at_square[square] = piece;
                 _occupied_by_type[piece.type()].set(squares_t{square});
@@ -101,7 +89,7 @@ constexpr void position_t::setup(const std::string_view fen) noexcept {
 
     std::string_view en_passant_part {*fen_part++};
     if (en_passant_part[0] != '-')
-        _special.set(square_t{file_e(en_passant_part[0] - 'a'), rank_e(en_passant_part[1] - '1')});
+        _special.set(square_t{en_passant_part});
 
     if (fen_part != fen_parts.end()) {
         std::string_view half_move_part {*fen_part++};

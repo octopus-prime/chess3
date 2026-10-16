@@ -263,12 +263,14 @@ assertion helper is `test/test_support.hpp`. Test targets link only their
 corresponding library; CMake builds prerequisites before consumers and may
 build independent test targets in parallel.
 
-- `chess.types`: piece/side encoding, coordinate round trips, square-set
+- `chess.types`: piece/side encoding, coordinate round trips, string-view construction
+  of files, ranks, all 64 squares, piece types and both colors of pieces, square-set
   operations and iteration, score arithmetic/classification, 64-bit hash
   boundaries and reversible XOR updates, and ply range/arithmetic; checked at
   compile time and runtime while linking only Types.
 - `chess.lookup`: attack generation/lookup assertions and all 512 ray entries.
-- `chess.position`: move encoding assertions, FEN queries, sniper/blocker
+- `chess.position`: move encoding assertions, string-view UCI move construction
+  (including all promotion choices for both colors and non-null-terminated views), FEN queries, sniper/blocker
   assertions, pin detection after move/undo and checker lifecycle tests, all four castling moves, castling
   rights updates, nested castling undo, en-passant execution/generation,
   king-safety edge cases, en-passant target lifetime/restoration, and exact
@@ -288,6 +290,9 @@ build independent test targets in parallel.
   penalties to scan only previously searched moves.
 - `chess.evaluator`: NNUE evaluator checks.
 - `chess.mates`: mate-in-3/5/6/8 regressions with exact mate scores.
+- `chess.uci`: in-process command/response checks for identification, readiness,
+  new games, unknown commands, EOF and quit. Output capture uses POSIX file
+  descriptors because the engine writes directly to C stdout.
 - `chess.engine`: all Engine suites, including the longer mate regressions.
 
 CTest is available through VS Code's CMake Tools test integration. To run a suite
@@ -300,6 +305,8 @@ using iterative deepening through depths 5/9/11/15 and checking exact mate
 distances and legal PV moves. The `negamax` selector runs the shorter search tests.
 The Core `position` suite also checks null-move hash/EP/last-move round trips,
 halfmove-counter preservation, and repetition isolation across null moves.
+`./chess_engine_tests uci` runs the small UCI protocol suite. The UCI input loop
+returns on EOF or `quit`; it does not terminate the hosting process.
 `./chess_nnue_tests` runs the NNUE suite.
 CTest labels `types`, `core`, `nnue`, and `engine` group tests by library.
 Set `BUILD_TESTING=OFF` to omit all four test executables.

@@ -3,7 +3,7 @@ module;
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
-#include <array>
+#include <string_view>
 
 export module types.square:decl;
 
@@ -28,6 +28,7 @@ struct square_t final {
   constexpr square_t() noexcept;
   constexpr square_t(const square_e square) noexcept;
   constexpr square_t(const file_t file, const rank_t rank) noexcept;
+  constexpr square_t(const std::string_view square) noexcept;
   constexpr operator square_e() const noexcept;
   constexpr file_t file() const noexcept;
   constexpr rank_t rank() const noexcept;

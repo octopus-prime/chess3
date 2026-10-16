@@ -18,7 +18,6 @@ private:
     void ucinewgame() noexcept;
     void position(const std::string_view args) noexcept;
     void go(const std::string_view args) noexcept;
-    void quit() noexcept;
 
     negamax_t engine;
 };

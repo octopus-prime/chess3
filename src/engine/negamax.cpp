@@ -22,26 +22,12 @@ import types.type;
 
 namespace chess {
 
-constexpr type_t type_lookup(const char ch) noexcept {
-    switch (ch) {
-        case 'q': return Q;
-        case 'r': return R;
-        case 'b': return B;
-        case 'n': return N;
-        default: return NO_TYPE;
-    }
-}
-
 negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), killer(), history(), nodes_searched{}, end_time{} {}
 
 void negamax_t::setup(const std::string_view fen, const std::string_view moves) noexcept {
     position.setup(fen);
     for (auto&& part : std::views::split(moves, ' ')) {
-        const std::string_view view{part};
-        const square_t from{file_e(view[0] - 'a'), rank_e(view[1] - '1')};
-        const square_t to{file_e(view[2] - 'a'), rank_e(view[3] - '1')};
-        const type_t promotion = view.size() > 4 ? type_lookup(view[4]) : NO_TYPE;
-        const move_t move{from, to, promotion};
+        const std::string_view move{part};
         position.do_move(move);
     }
 }
@@ -95,8 +81,8 @@ score_t negamax_t::operator()(const ply_t max_depth, const std::chrono::steady_c
     end_time = start + duration;
     score_t score = qsearch<true>(0, MIN, MAX);
     move_t best_move{};
-    for (chess::ply_t depth = 1; depth <= max_depth; ++depth) {
-        score = asearch(score, depth);
+    for (ply_t depth = 1; depth <= max_depth; ++depth) {
+        score = asearch(score, static_cast<ply_t>(depth));
         if (score.ignore())
             break;
         const auto end = steady_clock::now();
