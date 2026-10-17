@@ -1,3 +1,6 @@
+#include <algorithm>
+#include <array>
+#include "../nnue/reference_positions.hpp"
 #include "test_support.hpp"
 
 import engine.evaluator;
@@ -12,23 +15,23 @@ bool run_evaluator_tests() {
     evaluator_t evaluator{};
 
     position_t position{};
-    bool passed = test_support::check(evaluator.evaluate(position) == score_e{10},
+    bool passed = test_support::check(evaluator.evaluate(position) == score_e{26},
                                       "evaluator initial position");
 
     position.do_move(move_t{e2, e4});
-    passed &= test_support::check(evaluator.evaluate(position) == score_e{-51},
+    passed &= test_support::check(evaluator.evaluate(position) == score_e{-12},
                                   "evaluator after 1. e4");
 
     position.do_move(move_t{e7, e5});
-    passed &= test_support::check(evaluator.evaluate(position) == score_e{16},
+    passed &= test_support::check(evaluator.evaluate(position) == score_e{32},
                                   "evaluator after 1... e5");
 
     position = position_t{"1k6/8/8/8/3r4/2P5/8/K7 w - -"};
-    passed &= test_support::check(evaluator.evaluate(position) == score_e{-841},
+    passed &= test_support::check(evaluator.evaluate(position) == score_e{-1513},
                                   "evaluator custom position white to move");
 
     position = position_t{"1k6/8/8/8/3r4/2P5/8/K7 b - -"};
-    passed &= test_support::check(evaluator.evaluate(position) == score_e{1125},
+    passed &= test_support::check(evaluator.evaluate(position) == score_e{2193},
                                   "evaluator custom position black to move");
 
     // Test king moves and cache consistency compared to fresh evaluation
@@ -58,5 +61,52 @@ bool run_evaluator_tests() {
                                       "cached evaluator matches fresh evaluator on diverse FEN");
     }
 
+    for (const auto& test : nnue_reference::cases) {
+        position.setup(test.fen);
+        passed &= test_support::check(evaluator.evaluate(position) == test.score,
+                                      "accumulator cache matches Stockfish across positions and queen buckets");
+        passed &= test_support::check(evaluator.evaluate(position) == test.score,
+                                      "unchanged position leaves cached features unchanged");
+    }
+
+    struct move_case_t {
+        std::string_view fen;
+        move_t move;
+    };
+    const std::array moves{
+        move_case_t{"r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1", {e1, g1}},
+        move_case_t{"r3k2r/8/8/8/8/8/8/R3K2R b KQkq - 0 1", {e8, c8}},
+        move_case_t{"4k3/8/8/3pP3/8/8/8/4K3 w - d6 0 1", {e5, d6}},
+        move_case_t{"4k3/8/8/8/8/8/3q4/3RK3 w - - 0 1", {d1, d2}},
+        move_case_t{"4k3/P7/8/8/8/8/8/4K3 w - - 0 1", {a7, a8, Q}},
+        move_case_t{"4k3/P7/8/8/8/8/8/4K3 w - - 0 1", {a7, a8, N}},
+        move_case_t{"4k3/8/8/8/8/8/p7/4K3 b - - 0 1", {a2, a1, Q}}
+    };
+    for (const auto& test : moves) {
+        position.setup(test.fen);
+        const auto before = evaluator.evaluate(position);
+        std::array<move_t, 256> legal_buffer;
+        const auto legal = position.generate_all_moves(legal_buffer);
+        const bool valid = std::ranges::find(legal, test.move) != legal.end();
+        passed &= test_support::check(valid, "cache transition fixture uses a legal move");
+        if (!valid)
+            continue;
+        position.do_move(test.move);
+        evaluator_t fresh;
+        passed &= test_support::check(evaluator.evaluate(position) == fresh.evaluate(position),
+                                      "cache refresh handles castling, en passant, queen capture, and promotion");
+        position.undo_move(test.move);
+        passed &= test_support::check(evaluator.evaluate(position) == before,
+                                      "cache refresh restores all three feature families after undo");
+    }
+    position.setup("4k3/8/8/3pP3/8/8/8/3QK3 w - d6 0 1");
+    const auto before_null = evaluator.evaluate(position);
+    position.do_null_move();
+    evaluator_t fresh;
+    passed &= test_support::check(evaluator.evaluate(position) == fresh.evaluate(position),
+                                  "null move selects the opposite perspective and queen bucket");
+    position.undo_null_move();
+    passed &= test_support::check(evaluator.evaluate(position) == before_null,
+                                  "null-move undo preserves the cached evaluation");
     return passed;
 }

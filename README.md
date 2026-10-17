@@ -312,7 +312,9 @@ build independent test targets in parallel.
   Kiwipete at depths zero through five
   (`1`, `48`, `2039`, `97862`, `4085603`, `193690690`), focused en-passant positions for both colors
   at depths zero through two (`1`, `7`, `38`), and repeated-call restoration.
-- `chess.nnue`: network loading and inference checks.
+- `chess.nnue`: exact Stockfish feature-index and raw-evaluation references across
+  all 32 network stacks, incremental/full accumulator equivalence, and network
+  loader error checks.
 - `chess.engine`: quiescence quiet promotions, checkmate, quiet check evasions, and TT mate-score
   conversion across search heights for exact, lower-bound, and upper-bound entries,
   history gravity bounds and piece/square isolation, and history ordering without
@@ -320,7 +322,9 @@ build independent test targets in parallel.
   underlying buffer prefix matches the searched sequence, allowing cutoff
   bookkeeping to distinguish searched moves. Search regressions check fixed-depth
   node budgets, reference best moves, legal PVs, deadline handling and root restoration.
-- `chess.evaluator`: NNUE evaluator checks.
+- `chess.evaluator`: Stockfish reference scores through the accumulator cache,
+  repeated refreshes, king moves, castling, en passant, queen captures,
+  promotions/underpromotions, move undo, and null-move round trips.
 - `chess.mates`: mate-in-3/5/6 regressions with exact mate scores. The selective
   search uses depths 5/9/15 respectively; the mate-in-6 distance remains 11 plies,
   independent of its larger search-depth budget. The mate-in-8 case remains disabled.
@@ -347,10 +351,44 @@ Set `BUILD_TESTING=OFF` to omit all four test executables.
 
 ## NNUE network
 
-The NNUE evaluation network is compressed as `nnue.bin.xz`. Before running `chess3`
-or Engine/NNUE test suites, decompress `nnue.bin.xz` to obtain
-`nnue.bin` in the repository root. The loader currently opens `../nnue.bin`,
-so run these executables from the `build/` directory; CTest uses that directory.
+The included `nnue.bin.xz` contains the unmodified Stockfish network
+[`nn-c9e480e92425.nnue`](https://github.com/official-stockfish/networks/blob/master/nn-c9e480e92425.nnue),
+matching Stockfish revision `effdc3fd`. Its decompressed SHA-256 is
+`c9e480e92425f887df6ab9b05c6180fbd762b07879df9d9845f1aa75440caa73`.
+The implementation follows Stockfish's GPLv3 NNUE architecture while retaining
+this project's independent, refresh-based design.
+
+Before running `chess3` or Engine/NNUE tests, decompress the network to `nnue.bin`
+in the repository root, replacing any older `nnue.bin`. The loader opens
+`../nnue.bin`, so run these executables from `build/`; CTest uses that directory.
+It reads the standard little-endian `.nnue` format directly and checks version,
+architecture/section hashes, truncation, and trailing data. The previous custom
+network format is no longer supported; no network conversion is needed.
+
+There are three sparse input groups contributing to one 1024-element accumulator
+per perspective:
+
+- `FullThreats`: 59,808 attack/defence features, recomputed with current occupancy.
+- `PP_3Wide`: 4,560 pawn-pair features for pawns on the same or adjacent files.
+- `K32Q2`: 45,056 piece-square features conditioned on king bucket and opposing
+  queen presence.
+
+The evaluator keeps its per-color, per-king-square accumulator cache. Each
+`refresh()` enumerates and sorts the current features, subtracts cached features
+that disappeared, and adds new features. This includes remote slider threats,
+pawn pairs, and queen-plane changes. There are no dirty-piece/dirty-threat
+records, accumulator stacks, or changes to move execution.
+
+After pairwise clipped activation, the dense network is
+`1024 -> 32 -> 32 -> 1`, with squared and linear activations, concatenated skip
+connections, and 32 stacks selected by piece count and both sides' queen presence.
+Evaluation matches Stockfish's raw `Network::evaluate()` integer result, including
+its output scaling; Stockfish's additional evaluation/search adjustments are not
+applied. AVX-512 VNNI is used for dense inference.
+
+The checked-in reference fixtures in [reference_positions.hpp](test/nnue/reference_positions.hpp)
+were generated from the adjacent Stockfish implementation and this exact network.
+Tests require only the included network, not a Stockfish checkout or executable.
 
 ### How to extract
 
@@ -358,7 +396,7 @@ so run these executables from the `build/` directory; CTest uses that directory.
   Right-click `nnue.bin.xz` $\rightarrow$ **7-Zip** $\rightarrow$ **Extract Here**.
 - **Linux / macOS:**
   ```sh
-  xz -dk nnue.bin.xz
+  xz -dkf nnue.bin.xz
   ```
 
 ## Build and run
