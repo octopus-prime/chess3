@@ -270,7 +270,7 @@ int16_t nnue_t::evaluate(const entry_t& t, const entry_t& o, const size_t piece_
     const auto positional = l4transformed[0] + l2transformed[L2 - 1] * (600 * 16) / (127 * (1 << 6));
     const auto psqt = (t.psqrt_accumulation[bucket] - o.psqrt_accumulation[bucket]) / 2;
 
-    return (positional + psqt) / 64;
+    return (positional + psqt) / 32;
 }
 
 }

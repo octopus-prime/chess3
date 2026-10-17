@@ -35,6 +35,7 @@ list(REMOVE_ITEM nnue_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/nnue/main.cpp")
 # add_link_options(-fprofile-generate)
 
 # llvm-profdata merge -output=foo *.profraw
+# & 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\Llvm\x64\bin\llvm-profdata.exe' merge -output=foo *.profraw
 
 # add_compile_options(-fprofile-use=foo)
 # add_link_options(-fprofile-use=foo)
@@ -104,13 +105,15 @@ if(BUILD_TESTING)
         test/engine/main.cpp
         test/engine/negamax.cpp
         test/engine/evaluator.cpp
+        test/engine/uci.cpp
     )
     target_include_directories(chess_engine_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/test")
     target_link_libraries(chess_engine_tests PRIVATE chess_engine)
-    foreach(suite IN ITEMS negamax evaluator mates)
+    foreach(suite IN ITEMS negamax evaluator mates uci)
         add_test(NAME chess.${suite} COMMAND chess_engine_tests ${suite})
         set_tests_properties(chess.${suite} PROPERTIES LABELS engine)
     endforeach()
+    set_tests_properties(chess.uci PROPERTIES TIMEOUT 10)
     add_test(NAME chess.engine COMMAND chess_engine_tests)
     set_tests_properties(chess.types PROPERTIES LABELS types)
     set_tests_properties(chess.engine PROPERTIES LABELS engine)

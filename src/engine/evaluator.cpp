@@ -24,7 +24,9 @@ evaluator_t::evaluator_t()
 score_t evaluator_t::evaluate(const position_t& position) noexcept {
     const nnue::entry_t& t = refresh(position, position.side());
     const nnue::entry_t& o = refresh(position, ~position.side());
-    return score_e(_nnue->evaluate(t, o, position.by().size()));
+    auto score = _nnue->evaluate(t, o, position.by().size());
+    // score -= score * position.halfmove() / 212;
+    return score_e(score);
 }
 
 const nnue::entry_t& evaluator_t::refresh(const position_t& position, const side_e side) noexcept {

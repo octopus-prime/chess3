@@ -1,6 +1,7 @@
 module;
 
 #include <cassert>
+#include <string_view>
 
 export module types.square:impl;
 
@@ -19,6 +20,12 @@ constexpr square_t::square_t(const file_t file, const rank_t rank) noexcept : _i
     assert(rank <= _8);
 }
 
+constexpr square_t::square_t(const std::string_view square) noexcept : square_t(square.substr(0), square.substr(1)) {
+    assert(square.size() >= 2);
+    assert(file() <= h);
+    assert(rank() <= _8);
+}
+    
 constexpr square_t::operator square_e() const noexcept {
     return square_e(_index);
 }

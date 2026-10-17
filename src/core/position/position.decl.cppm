@@ -43,6 +43,7 @@ struct position_t final {
   };
   constexpr position_t() noexcept;
   constexpr position_t(const std::string_view fen) noexcept;
+  constexpr void setup(const std::string_view fen) noexcept;
   constexpr piece_t at(const square_t square) const noexcept;
   constexpr squares_t by() const noexcept;
   constexpr squares_t by(const side_t side) const noexcept;
@@ -66,6 +67,8 @@ struct position_t final {
   constexpr bool threefold_repetition() const noexcept;
   constexpr bool fifty_move_rule() const noexcept;
   constexpr bool insufficient_material() const noexcept;
+  constexpr uint8_t repetition() const noexcept;
+  constexpr uint8_t halfmove() const noexcept;
 
   std::span<move_t> generate_all_moves(const std::span<move_t, 256> buffer) const noexcept;
   std::span<move_t> generate_tactical_moves(const std::span<move_t, 256> buffer) const noexcept;

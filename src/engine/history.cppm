@@ -28,6 +28,11 @@ struct history_t final {
         entry = static_cast<int16_t>(value + bonus - value * magnitude / LIMIT);
     }
 
+    constexpr void clear() noexcept {
+        for (auto& entry : entries)
+            entry.fill(0);
+    }
+
     static constexpr int bonus(const ply_t depth) noexcept {
         const int bounded_depth = std::min(int{depth}, 12);
         return std::min(16 * bounded_depth * bounded_depth, 2048);
