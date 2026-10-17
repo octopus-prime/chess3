@@ -3,6 +3,7 @@ module;
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -11,7 +12,6 @@ module;
 #include <span>
 #include <stdexcept>
 #include <string>
-#include <vector>
 
 #include <immintrin.h>
 
@@ -169,21 +169,26 @@ uint32_t pair_index(const square_t king, const square_t from, const square_t to,
     return THREAT_INPUTS + high * (high - 1) / 2 + low;
 }
 
-void active_features(const position_t& position, const side_t perspective,
-                     std::vector<uint32_t>& features) {
-    features.clear();
-    const auto king = position.by(perspective, K).front();
-    const bool opponent_queen = !position.by(~perspective, Q).empty();
+std::array<std::span<uint32_t>, 2> active_features(
+    const position_t& position, const std::span<feature_buffer_t, 2> buffers) noexcept {
+    std::array<size_t, 2> counts{};
+    const square_t kings[] = {position.by(WHITE, K).front(), position.by(BLACK, K).front()};
+    const bool queens[] = {!position.by(WHITE, Q).empty(), !position.by(BLACK, Q).empty()};
     const auto occupied = position.by();
+    assert(occupied.size() <= 32 && position.by(P).size() <= 16);
     for (const square_t from : occupied) {
         const auto piece = position.at(from);
-        features.push_back(make_index(king, from, piece, perspective, opponent_queen));
+        for (const side_t side : {WHITE, BLACK})
+            buffers[side][counts[side]++] = make_index(kings[side], from, piece, side, queens[~side]);
         if (piece.type() == K)
             continue;
         for (const square_t to : attacks(piece.type(), from, occupied, piece.side()) & occupied) {
-            const auto index = threat_index(king, from, to, piece, position.at(to), perspective);
-            if (index < THREAT_INPUTS)
-                features.push_back(index);
+            const auto target = position.at(to);
+            for (const side_t side : {WHITE, BLACK}) {
+                const auto index = threat_index(kings[side], from, to, piece, target, side);
+                if (index < THREAT_INPUTS)
+                    buffers[side][counts[side]++] = index;
+            }
         }
     }
 
@@ -192,10 +197,12 @@ void active_features(const position_t& position, const side_t perspective,
         pawns.reset(from);
         for (const square_t to : pawns)
             if (std::abs(int(from.file()) - int(to.file())) <= 1)
-                features.push_back(pair_index(king, from, to, position.at(from).side(),
-                                              position.at(to).side(), perspective));
+                for (const side_t side : {WHITE, BLACK})
+                    buffers[side][counts[side]++] = pair_index(
+                        kings[side], from, to, position.at(from).side(), position.at(to).side(), side);
     }
-    std::ranges::sort(features);
+    return {std::span{buffers[WHITE]}.first(counts[WHITE]),
+            std::span{buffers[BLACK]}.first(counts[BLACK])};
 }
 
 std::unique_ptr<nnue_t> load(const std::string_view filename) {
@@ -232,22 +239,30 @@ nnue_t::nnue_t(const std::string_view filename) {
 
 void nnue_t::initialize(entry_t& entry) const noexcept {
     std::ranges::copy(feature_layer.biases, entry.accumulation);
-    entry.features.clear();
+    entry.feature_count = 0;
 }
 
 void nnue_t::update(entry_t& entry, const std::span<const uint32_t> removed,
                     const std::span<const uint32_t> added) const noexcept {
-    for (size_t i = 0; i < L1; i += 32) {
-        auto accumulation = _mm512_load_si512(entry.accumulation + i);
+    if (removed.empty() && added.empty())
+        return;
+    constexpr size_t registers = 16;
+    for (size_t base = 0; base < L1; base += registers * 32) {
+        __m512i accumulation[registers];
+        for (size_t i = 0; i < registers; ++i)
+            accumulation[i] = _mm512_load_si512(entry.accumulation + base + i * 32);
         for (const auto feature : removed)
-            accumulation = _mm512_sub_epi16(accumulation,
-                _mm512_cvtepi8_epi16(_mm256_load_si256(
-                    reinterpret_cast<const __m256i*>(feature_layer.weights[feature] + i))));
+            for (size_t i = 0; i < registers; ++i)
+                accumulation[i] = _mm512_sub_epi16(accumulation[i],
+                    _mm512_cvtepi8_epi16(_mm256_load_si256(
+                        reinterpret_cast<const __m256i*>(feature_layer.weights[feature] + base + i * 32))));
         for (const auto feature : added)
-            accumulation = _mm512_add_epi16(accumulation,
-                _mm512_cvtepi8_epi16(_mm256_load_si256(
-                    reinterpret_cast<const __m256i*>(feature_layer.weights[feature] + i))));
-        _mm512_store_si512(entry.accumulation + i, accumulation);
+            for (size_t i = 0; i < registers; ++i)
+                accumulation[i] = _mm512_add_epi16(accumulation[i],
+                    _mm512_cvtepi8_epi16(_mm256_load_si256(
+                        reinterpret_cast<const __m256i*>(feature_layer.weights[feature] + base + i * 32))));
+        for (size_t i = 0; i < registers; ++i)
+            _mm512_store_si512(entry.accumulation + base + i * 32, accumulation[i]);
     }
 }
 

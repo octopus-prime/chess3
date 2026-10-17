@@ -2,10 +2,10 @@ module;
 
 #include <cstddef>
 #include <cstdint>
+#include <array>
 #include <memory>
 #include <span>
 #include <string_view>
-#include <vector>
 
 export module nnue.nnue;
 
@@ -25,6 +25,9 @@ constexpr size_t L1 = 1024;
 constexpr size_t L2 = 32;
 constexpr size_t L3 = 32;
 constexpr size_t SLOTS = 32;
+// At most 32 PSQs, 32 * 31 directed threats, and 16 * 15 / 2 pawn pairs.
+constexpr size_t MAX_ACTIVE = 32 + 32 * 31 + 16 * 15 / 2;
+using feature_buffer_t = std::array<uint32_t, MAX_ACTIVE>;
 constexpr std::string_view NETWORK_NAME = "nn-c9e480e92425.nnue";
 
 uint32_t make_index(square_t king, square_t square, piece_t piece, side_t perspective,
@@ -33,12 +36,13 @@ uint32_t threat_index(square_t king, square_t from, square_t to, piece_t attacke
                       piece_t target, side_t perspective) noexcept;
 uint32_t pair_index(square_t king, square_t from, square_t to, side_t color,
                     side_t paired_color, side_t perspective) noexcept;
-void active_features(const position_t& position, side_t perspective,
-                     std::vector<uint32_t>& features);
+std::array<std::span<uint32_t>, 2> active_features(
+    const position_t& position, std::span<feature_buffer_t, 2> buffers) noexcept;
 
 struct entry_t final {
     alignas(64) int16_t accumulation[L1]{};
-    std::vector<uint32_t> features;
+    feature_buffer_t features;
+    size_t feature_count{};
 };
 
 struct nnue_t final {

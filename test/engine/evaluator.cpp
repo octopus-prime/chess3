@@ -1,5 +1,7 @@
 #include <algorithm>
 #include <array>
+#include <memory>
+#include <string>
 #include "../nnue/reference_positions.hpp"
 #include "test_support.hpp"
 
@@ -10,6 +12,62 @@ import types.square;
 import types.score;
 
 using namespace chess;
+
+size_t test_allocation_count() noexcept;
+
+namespace {
+
+bool test_allocation_free_evaluation() {
+    constexpr size_t king_positions = 64;
+    const auto positions = std::make_unique<position_t[]>(
+        king_positions + nnue_reference::cases.size());
+    for (size_t king = 0; king < king_positions; ++king) {
+        std::string fen;
+        for (int rank = 7; rank >= 0; --rank) {
+            int empty = 0;
+            for (int file = 0; file < 8; ++file) {
+                const auto square = static_cast<size_t>(rank * 8 + file);
+                const char piece = square == king ? 'K' : square == (king + 32) % 64 ? 'k' : '\0';
+                if (!piece) {
+                    ++empty;
+                    continue;
+                }
+                if (empty) {
+                    fen += static_cast<char>('0' + empty);
+                    empty = 0;
+                }
+                fen += piece;
+            }
+            if (empty)
+                fen += static_cast<char>('0' + empty);
+            if (rank)
+                fen += '/';
+        }
+        positions[king].setup(fen + " w - - 0 1");
+    }
+    for (size_t i = 0; i < nnue_reference::cases.size(); ++i)
+        positions[king_positions + i].setup(nnue_reference::cases[i].fen);
+
+    evaluator_t evaluator;
+    std::array<score_t, king_positions> king_scores;
+    const auto before = test_allocation_count();
+    bool correct = true;
+    for (size_t round = 0; round < 2; ++round) {
+        for (size_t i = 0; i < king_positions; ++i) {
+            if (!round)
+                king_scores[i] = evaluator.evaluate(positions[i]);
+            else
+                correct &= evaluator.evaluate(positions[i]) == king_scores[i];
+        }
+        for (size_t i = 0; i < nnue_reference::cases.size(); ++i)
+            correct &= evaluator.evaluate(positions[king_positions + i]) == nnue_reference::cases[i].score;
+    }
+    const auto after = test_allocation_count();
+    return test_support::check(correct, "allocation test retains exact reference evaluations") &&
+        test_support::check(after == before, "evaluation allocates nothing, including all cold king-cache entries");
+}
+
+}
 
 bool run_evaluator_tests() {
     evaluator_t evaluator{};
@@ -108,5 +166,6 @@ bool run_evaluator_tests() {
     position.undo_null_move();
     passed &= test_support::check(evaluator.evaluate(position) == before_null,
                                   "null-move undo preserves the cached evaluation");
+    passed &= test_allocation_free_evaluation();
     return passed;
 }

@@ -373,11 +373,17 @@ per perspective:
 - `K32Q2`: 45,056 piece-square features conditioned on king bucket and opposing
   queen presence.
 
-The evaluator keeps its per-color, per-king-square accumulator cache. Each
-`refresh()` enumerates and sorts the current features, subtracts cached features
-that disappeared, and adds new features. This includes remote slider threats,
-pawn pairs, and queen-plane changes. There are no dirty-piece/dirty-threat
-records, accumulator stacks, or changes to move execution.
+The evaluator keeps its per-color, per-king-square accumulator cache. Features
+for both perspectives are enumerated together, sharing attack and pawn-pair
+generation. Each `refresh()` uses a fixed-size membership table to subtract
+cached features that disappeared and add new features, without sorting.
+Feature and delta buffers have a conservative legal-position bound of 1,144
+indices (32 PSQs, at most 32 * 31 directed threats, and 120 pawn pairs).
+Evaluation performs no heap allocations, including the first visit to any king
+cache entry; only evaluator construction allocates the network and cache.
+Accumulator updates stream weight rows in SIMD register tiles. This includes
+remote slider threats, pawn pairs, and queen-plane changes. There are no
+dirty-piece/dirty-threat records, accumulator stacks, or changes to move execution.
 
 After pairwise clipped activation, the dense network is
 `1024 -> 32 -> 32 -> 1`, with squared and linear activations, concatenated skip

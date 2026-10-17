@@ -6,6 +6,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -19,7 +20,7 @@ using namespace chess;
 
 namespace {
 
-uint64_t feature_hash(const std::vector<uint32_t>& features) {
+uint64_t feature_hash(const std::span<const uint32_t> features) {
     uint64_t hash = 14695981039346656037ULL;
     for (const auto feature : features)
         hash = (hash ^ feature) * 1099511628211ULL;
@@ -77,32 +78,39 @@ bool run_nnue_tests() {
     std::vector<uint32_t> removed;
     std::vector<uint32_t> added;
     std::array<bool, nnue::SLOTS> buckets{};
+    std::array<nnue::feature_buffer_t, 2> buffers;
     bool passed = true;
 
     for (const auto& test : nnue_reference::cases) {
         const position_t position{test.fen};
+        const auto active = nnue::active_features(position, buffers);
         nnue::entry_t fresh[2];
         for (const side_t side : {WHITE, BLACK}) {
             auto& entry = fresh[side];
             network->initialize(entry);
-            nnue::active_features(position, side, entry.features);
+            auto features = active[side];
+            entry.feature_count = features.size();
+            std::ranges::sort(features);
+            std::ranges::copy(features, entry.features.begin());
             passed &= test_support::check(
-                feature_hash(entry.features) == test.feature_hashes[side],
+                feature_hash(features) == test.feature_hashes[side],
                 "PSQ, threat, and pawn-pair feature indices match Stockfish");
             passed &= test_support::check(
-                std::ranges::adjacent_find(entry.features) == entry.features.end() &&
-                    entry.features.back() < nnue::L0,
+                std::ranges::adjacent_find(features) == features.end() &&
+                    features.back() < nnue::L0,
                 "active features are unique and within the network dimensions");
-            network->update(entry, {}, entry.features);
+            network->update(entry, {}, features);
 
             removed.clear();
             added.clear();
-            std::ranges::set_difference(cached[side].features, entry.features,
+            const auto previous = std::span{cached[side].features}.first(cached[side].feature_count);
+            std::ranges::set_difference(previous, features,
                                         std::back_inserter(removed));
-            std::ranges::set_difference(entry.features, cached[side].features,
+            std::ranges::set_difference(features, previous,
                                         std::back_inserter(added));
             network->update(cached[side], removed, added);
-            cached[side].features = entry.features;
+            std::ranges::copy(features, cached[side].features.begin());
+            cached[side].feature_count = entry.feature_count;
             passed &= test_support::check(
                 std::ranges::equal(cached[side].accumulation, entry.accumulation),
                 "feature deltas reproduce a fresh accumulator exactly");
