@@ -3,7 +3,7 @@
 #include <chrono>
 #include <string_view>
 
-import engine.negamax;
+import engine.engine;
 import engine.uci;
 
 using namespace std::string_view_literals;
@@ -45,7 +45,7 @@ void bench() {
         "r2qnrnk/p2b2b1/1p1p2pp/2pPpp2/1PP1P3/PRNBB3/3QNPPP/5RK1 w - -", // e4f5; id "BK.24"; f2f4
     };
     constexpr chess::ply_t depth = 12;
-    chess::negamax_t engine{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"};
+    chess::engine_t engine{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"};
     size_t nodes = 0;
     const auto start = std::chrono::steady_clock::now();
     for (const std::string_view fen : fens) {

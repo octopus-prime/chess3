@@ -99,18 +99,18 @@ if(BUILD_TESTING)
 
     add_executable(chess_engine_tests
         test/engine/main.cpp
-        test/engine/negamax.cpp
+        test/engine/engine.cpp
         test/engine/evaluator.cpp
         test/engine/uci.cpp
     )
     target_include_directories(chess_engine_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/test")
     target_link_libraries(chess_engine_tests PRIVATE chess_engine)
-    foreach(suite IN ITEMS negamax evaluator mates uci)
+    foreach(suite IN ITEMS engine evaluator mates uci)
         add_test(NAME chess.${suite} COMMAND chess_engine_tests ${suite})
         set_tests_properties(chess.${suite} PROPERTIES LABELS engine)
     endforeach()
     set_tests_properties(chess.uci PROPERTIES TIMEOUT 10)
-    add_test(NAME chess.engine COMMAND chess_engine_tests)
+    add_test(NAME chess.engine.all COMMAND chess_engine_tests)
     set_tests_properties(chess.types PROPERTIES LABELS types)
-    set_tests_properties(chess.engine PROPERTIES LABELS engine)
+    set_tests_properties(chess.engine.all PROPERTIES LABELS engine)
 endif()

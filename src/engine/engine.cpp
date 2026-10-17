@@ -9,10 +9,9 @@ module;
 #include <string_view>
 #include <ranges>
 #include <cmath>
-#include <iostream>
 #include <chrono>
 
-module engine.negamax;
+module engine.engine;
 
 import engine.formatting;
 import core.attacks.generator;
@@ -22,9 +21,9 @@ import types.type;
 
 namespace chess {
 
-negamax_t::negamax_t(const std::string_view fen) noexcept : position(fen), transposition(), killer(), history(), nodes_searched{}, end_time{} {}
+engine_t::engine_t(const std::string_view fen) noexcept : position(fen), transposition(), killer(), history(), nodes_searched{}, end_time{} {}
 
-void negamax_t::setup(const std::string_view fen, const std::string_view moves) noexcept {
+void engine_t::setup(const std::string_view fen, const std::string_view moves) noexcept {
     position.setup(fen);
     for (auto&& part : std::views::split(moves, ' ')) {
         const std::string_view move{part};
@@ -32,31 +31,31 @@ void negamax_t::setup(const std::string_view fen, const std::string_view moves) 
     }
 }
 
-void negamax_t::reset() noexcept {
+void engine_t::reset() noexcept {
     position.setup("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
     clear();
 }
 
-void negamax_t::clear() noexcept {
+void engine_t::clear() noexcept {
     transposition.clear();
     killer.clear();
     history.clear();
     nodes_searched = 0;
 }
 
-size_t negamax_t::nodes() const noexcept {
+size_t engine_t::nodes() const noexcept {
     return nodes_searched;
 }
 
-size_t negamax_t::full() const noexcept {
+size_t engine_t::full() const noexcept {
     return transposition.full();
 }
 
-side_t negamax_t::side() const noexcept {
+side_t engine_t::side() const noexcept {
     return position.side();
 }
 
-std::span<move_t> negamax_t::extract_pv(const std::span<move_t, MAX_PLY> buffer, ply_t max_length) noexcept {
+std::span<move_t> engine_t::extract_pv(const std::span<move_t, MAX_PLY> buffer, ply_t max_length) noexcept {
     ply_t length = 0;
     while (length < max_length) {
         const auto entry = transposition.get(position.hash(), length);
@@ -76,7 +75,7 @@ std::span<move_t> negamax_t::extract_pv(const std::span<move_t, MAX_PLY> buffer,
     return buffer.first(length);
 }
 
-score_t negamax_t::operator()(const ply_t max_depth, const std::chrono::steady_clock::duration duration) noexcept {
+score_t engine_t::operator()(const ply_t max_depth, const std::chrono::steady_clock::duration duration) noexcept {
     using namespace std::chrono;
     std::array<chess::move_t, 256> buffer;
     char output[2048];
@@ -116,7 +115,7 @@ score_t negamax_t::operator()(const ply_t max_depth, const std::chrono::steady_c
     return score;
 }
 
-score_t negamax_t::asearch(const score_t eval, const ply_t depth) noexcept {
+score_t engine_t::asearch(const score_t eval, const ply_t depth) noexcept {
     int delta = 25 + 2 * depth;
     int alpha = depth < 5 || eval.decisive() ? MIN : std::max(int{MIN}, int(eval) - delta);
     int beta = depth < 5 || eval.decisive() ? MAX : std::min(int{MAX}, int(eval) + delta);
@@ -137,7 +136,7 @@ score_t negamax_t::asearch(const score_t eval, const ply_t depth) noexcept {
 }
 
 template <bool PV>  
-score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta) noexcept {
+score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta) noexcept {
     if ((nodes_searched & 1023) == 0 && std::chrono::steady_clock::now() >= end_time)
         return IGNORE;
 
@@ -282,7 +281,7 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
     return alpha;
 }
 
-score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
+score_t engine_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     if ((nodes_searched & 1023) == 0 && std::chrono::steady_clock::now() >= end_time)
         return IGNORE;
     ++nodes_searched;
@@ -352,7 +351,7 @@ score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     return alpha;
 }
 
-score_t negamax_t::evaluate() noexcept {
+score_t engine_t::evaluate() noexcept {
     return evaluator.evaluate(position);
     // using namespace attacks::generator;
     // const side_t side = position.side();

@@ -5,7 +5,7 @@ module;
 #include <string_view>
 #include <chrono>
 
-export module engine.negamax;
+export module engine.engine;
 
 export import core.move;
 export import types.square;
@@ -20,8 +20,8 @@ import engine.evaluator;
 
 export namespace chess {
 
-struct negamax_t final {
-    explicit negamax_t(const std::string_view fen) noexcept;
+struct engine_t final {
+    explicit engine_t(const std::string_view fen) noexcept;
     score_t operator()(const ply_t depth, const std::chrono::steady_clock::duration duration) noexcept;
     size_t nodes() const noexcept;
     size_t full() const noexcept;

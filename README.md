@@ -184,7 +184,7 @@ capture promotions, plus quiet promotions to all four pieces, without other
 quiet moves or castling. There is no separate public capture-only generator. It uses
 a separate pawn destination mask so adding the promotion rank cannot admit
 quiet moves by other pieces. Both masks respect check-evasion and pin restrictions.
-The [engine.negamax](src/engine/negamax.cppm) quiescence search uses tactical moves outside check. In check,
+The [engine.engine](src/engine/engine.cppm) quiescence search uses tactical moves outside check. In check,
 it skips stand pat, searches all legal evasions, and scores checkmate if none exist.
 Engine search depths, heights, principal-variation lengths, history bonuses,
 killer indices, and transposition-table depths use `ply_t` (`uint8_t`).
@@ -225,12 +225,12 @@ pruned moves from these penalties. The depth bonus is
 `min(16 * depth * depth, 2048)`, calculated with a bounded depth to avoid overflow.
 Updates use history gravity (`value += bonus - value * abs(bonus) / 16384`) with
 the bonus clamped to `[-16384, 16384]` and arithmetic in `int`. Captures and
-promotions do not update history. Each `negamax_t` owns its table and retains it
+promotions do not update history. Each `engine_t` owns its table and retains it
 across iterative-deepening calls; constructing a new search starts with zero history.
 
 ## Selective search
 
-[negamax.cpp](src/engine/negamax.cpp) deliberately trades exhaustive coverage for
+[engine.cpp](src/engine/engine.cpp) deliberately trades exhaustive coverage for
 greater selective depth. Nominal depth is not a guarantee that every line is
 searched that deeply; quiet sacrifices and zugzwang remain potential weaknesses.
 
@@ -313,7 +313,7 @@ build independent test targets in parallel.
   (`1`, `48`, `2039`, `97862`, `4085603`, `193690690`), focused en-passant positions for both colors
   at depths zero through two (`1`, `7`, `38`), and repeated-call restoration.
 - `chess.nnue`: network loading and inference checks.
-- `chess.negamax`: quiescence quiet promotions, checkmate, quiet check evasions, and TT mate-score
+- `chess.engine`: quiescence quiet promotions, checkmate, quiet check evasions, and TT mate-score
   conversion across search heights for exact, lower-bound, and upper-bound entries,
   history gravity bounds and piece/square isolation, and history ordering without
   changing capture-phase classification. Ordering tests also check that the
@@ -327,7 +327,7 @@ build independent test targets in parallel.
 - `chess.uci`: in-process command/response checks for identification, readiness,
   new games, unknown commands, EOF and quit. Responses use `std::cout`, captured
   by the tests with a standard C++ string stream.
-- `chess.engine`: all Engine suites, including the longer mate regressions.
+- `chess.engine.all`: all Engine suites, including the longer mate regressions.
 
 CTest is available through VS Code's CMake Tools test integration. To run a suite
 directly from the `build/` directory, use `./chess_types_tests` for Types,
@@ -336,7 +336,7 @@ directly from the `build/` directory, use `./chess_types_tests` for Types,
 `./chess_engine_tests` runs all Engine suites. The `mates` selector
 (`chess.mates` in CMake Tools) runs the longer mate-in-3/5/6 search regressions,
 using internal iterative deepening through depths 5/9/15 and checking exact mate
-distances and legal PV moves. The `negamax` selector runs the shorter search tests.
+distances and legal PV moves. The `engine` selector runs the shorter search tests.
 The Core `position` suite also checks null-move hash/EP/last-move round trips,
 halfmove-counter preservation, and repetition isolation across null moves.
 `./chess_engine_tests uci` runs the small UCI protocol suite. The UCI input loop
@@ -401,10 +401,10 @@ principal variations for depths one through twelve over the same FENs.
 Tests do not run during application startup or benchmark timing. Engine already
 uses NNUE evaluation; UCI is not implemented.
 
-`core.perft` and `engine.negamax` expose class declarations in their `.cppm`
+`core.perft` and `engine.engine` expose class declarations in their `.cppm`
 interfaces; runtime method definitions live in matching `.cpp` implementation
 units. The lazy ordering template lives in `engine.ordering`, imported by
-Negamax's implementation and the focused ordering tests, not by its public
+the search implementation and focused ordering tests, not by its public
 interface. LTO remains enabled across library and application boundaries.
 
 ## License
