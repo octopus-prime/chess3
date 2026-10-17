@@ -40,13 +40,13 @@ private:
     score_t qsearch(ply_t height, score_t alpha, score_t beta) noexcept;
     score_t evaluate() noexcept;
 
-    position_t position;
-    transposition_t transposition;
-    killer_t killer;
-    history_t history;
-    evaluator_t evaluator;
-    size_t nodes_searched;
-    std::chrono::steady_clock::time_point end_time;
+    position_t _position;
+    transposition_t _transposition;
+    killer_t _killer;
+    history_t _history;
+    evaluator_t _evaluator;
+    size_t _nodes;
+    std::chrono::steady_clock::time_point _end;
 };
 
 } // namespace chess

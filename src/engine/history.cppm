@@ -24,7 +24,7 @@ struct history_t final {
     static constexpr int bonus(const ply_t depth) noexcept;
 
 private:
-    std::array<std::array<int16_t, MAX_SQUARE>, MAX_PIECE> entries{};
+    std::array<std::array<int16_t, MAX_SQUARE>, MAX_PIECE> _entries{};
 };
 
 } // namespace chess
@@ -34,19 +34,19 @@ private:
 namespace chess {
 
 constexpr int history_t::get(const piece_t piece, const square_t to) const noexcept {
-    return entries[piece][to];
+    return _entries[piece][to];
 }
 
 constexpr void history_t::update(const piece_t piece, const square_t to, int bonus) noexcept {
     bonus = std::clamp(bonus, -LIMIT, LIMIT);
     const int magnitude = bonus < 0 ? -bonus : bonus;
-    auto& entry = entries[piece][to];
+    auto& entry = _entries[piece][to];
     const int value = entry;
     entry = static_cast<int16_t>(value + bonus - value * magnitude / LIMIT);
 }
 
 constexpr void history_t::clear() noexcept {
-    for (auto& entry : entries)
+    for (auto& entry : _entries)
         entry.fill(0);
 }
 
