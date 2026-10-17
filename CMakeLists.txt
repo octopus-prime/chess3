@@ -29,7 +29,6 @@ file(GLOB_RECURSE nnue_modules CONFIGURE_DEPENDS
 file(GLOB_RECURSE nnue_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/nnue/*.cpp"
 )
-list(REMOVE_ITEM nnue_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/nnue/main.cpp")
 
 # add_compile_options(-fprofile-generate)
 # add_link_options(-fprofile-generate)
@@ -70,11 +69,8 @@ target_sources(chess_engine
 add_executable(perft src/core/main.cpp)
 target_link_libraries(perft PRIVATE chess_core)
 
-add_executable(nnue_demo src/nnue/main.cpp)
-target_link_libraries(nnue_demo PRIVATE chess_nnue)
-
-add_executable(demo src/engine/main.cpp)
-target_link_libraries(demo PRIVATE chess_engine)
+add_executable(chess3 src/engine/main.cpp)
+target_link_libraries(chess3 PRIVATE chess_engine)
 
 include(CTest)
 if(BUILD_TESTING)

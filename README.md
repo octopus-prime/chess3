@@ -1,7 +1,7 @@
 # Chess
 
 A C++23 project using C++ modules and Clang-specific SIMD builtins, split into
-four static libraries and three applications:
+four static libraries and two applications:
 
 - `chess_types`: coordinate, square-set, piece, side, type, and score modules;
   independent of Core and Engine.
@@ -9,12 +9,9 @@ four static libraries and three applications:
   to `chess_types`.
   [core/main.cpp](src/core/main.cpp) builds the standalone `perft` benchmark.
 - `chess_nnue`: NNUE network loading and inference; links publicly to `chess_core`.
-  [nnue/main.cpp](src/nnue/main.cpp) builds `nnue_demo`, which loads
-  `../nnue.bin` relative to the working directory; it has no command-line
-  network-path option.
 - `chess_engine`: negamax, NNUE evaluation, history, killers, and the transposition table; links
   publicly to `chess_core` and `chess_nnue`.
-  [engine/main.cpp](src/engine/main.cpp) builds `demo`.
+  [engine/main.cpp](src/engine/main.cpp) builds `chess3`.
 - With `BUILD_TESTING`, `chess_types_tests`, `chess_core_tests`,
   `chess_nnue_tests`, and `chess_engine_tests` link to their respective libraries.
   Dependencies flow from Types to Core and NNUE to Engine through public links.
@@ -194,7 +191,7 @@ killer indices, and transposition-table depths use `ply_t` (`uint8_t`).
 Search stops extending at height 255 to prevent height wraparound. At that
 horizon quiescence returns static evaluation without generating moves or detecting checkmate.
 The iterative-deepening counter uses a wider integer so a requested depth of 255 terminates.
-The demo prints depths numerically.
+The `chess3` app prints depths numerically.
 
 `position_t::tactical(move)` classifies a legal move in the position before it is
 played: captures, all promotions, and pawn moves to the en-passant target are
@@ -350,8 +347,8 @@ Set `BUILD_TESTING=OFF` to omit all four test executables.
 
 ## NNUE network
 
-The NNUE evaluation network is compressed as `nnue.bin.xz`. Before running `demo`,
-`nnue_demo`, or Engine/NNUE test suites, decompress `nnue.bin.xz` to obtain
+The NNUE evaluation network is compressed as `nnue.bin.xz`. Before running `chess3`
+or Engine/NNUE test suites, decompress `nnue.bin.xz` to obtain
 `nnue.bin` in the repository root. The loader currently opens `../nnue.bin`,
 so run these executables from the `build/` directory; CTest uses that directory.
 
@@ -395,12 +392,11 @@ After extracting the network, run the applications from the build directory:
 ```sh
 cd build
 ./perft
-./demo
-./nnue_demo
+./chess3
 ```
 
 `perft` prints perft timings for depths one through six over the benchmark FENs.
-`demo` prints iterative-deepening search scores, cumulative nodes/timings, and
+`chess3` prints iterative-deepening search scores, cumulative nodes/timings, and
 principal variations for depths one through twelve over the same FENs.
 Tests do not run during application startup or benchmark timing. Engine already
 uses NNUE evaluation; UCI is not implemented.
