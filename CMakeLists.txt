@@ -35,6 +35,7 @@ list(REMOVE_ITEM nnue_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/nnue/main.cpp")
 # add_link_options(-fprofile-generate)
 
 # llvm-profdata merge -output=foo *.profraw
+# & 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\Llvm\x64\bin\llvm-profdata.exe' merge -output=foo *.profraw
 
 # add_compile_options(-fprofile-use=foo)
 # add_link_options(-fprofile-use=foo)

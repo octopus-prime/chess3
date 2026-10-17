@@ -37,7 +37,6 @@ private:
     score_t asearch(const score_t eval, const ply_t depth) noexcept;
     template <bool PV>
     score_t search(ply_t depth, ply_t height, score_t alpha, score_t beta) noexcept;
-    template <bool PV>
     score_t qsearch(ply_t height, score_t alpha, score_t beta) noexcept;
     score_t evaluate() noexcept;
 

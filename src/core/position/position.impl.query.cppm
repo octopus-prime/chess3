@@ -82,6 +82,14 @@ constexpr bool position_t::threefold_repetition() const noexcept {
     return _repetition >= 3;
 }
 
+constexpr uint8_t position_t::repetition() const noexcept {
+    return _repetition;
+}
+
+constexpr uint8_t position_t::halfmove() const noexcept {
+    return _halfmove;
+}
+
 constexpr bool position_t::insufficient_material() const noexcept {
     return (by(P) | by(R, Q)).empty() && by(WHITE, N, B).size() <= 1 && by(BLACK, N, B).size() <= 1;
     // if (!(by(P) | by(R, Q)).empty())

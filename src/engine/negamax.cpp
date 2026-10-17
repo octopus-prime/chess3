@@ -65,6 +65,9 @@ std::span<move_t> negamax_t::extract_pv(const std::span<move_t, MAX_PLY> buffer,
 
         buffer[length++] = entry->move;
         position.do_move(entry->move);
+
+        if (position.repetition() >= 3 || position.halfmove() >= 100)
+            break;
     }
 
     for (ply_t i = length; i > 0; --i)
@@ -80,7 +83,7 @@ score_t negamax_t::operator()(const ply_t max_depth, const std::chrono::steady_c
     const auto start = steady_clock::now();
     nodes_searched = 0;
     end_time = start + duration;
-    score_t score = qsearch<true>(0, MIN, MAX);
+    score_t score = qsearch(0, MIN, MAX);
     if (score.ignore())
         score = evaluate();
     move_t best_move{};
@@ -139,7 +142,7 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
         return IGNORE;
 
     if (depth == 0 || height == MAX_PLY - 1)
-        return qsearch<PV>(height, alpha, beta);
+        return qsearch(height, alpha, beta);
 
     ++nodes_searched;
 
@@ -279,7 +282,6 @@ score_t negamax_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta
     return alpha;
 }
 
-template <bool PV>
 score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     if ((nodes_searched & 1023) == 0 && std::chrono::steady_clock::now() >= end_time)
         return IGNORE;
@@ -336,7 +338,7 @@ score_t negamax_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
 
     for (const move_t& move : moves) {
         position.do_move(move);
-        const score_t score = -qsearch<PV>(height + 1, -beta, -alpha);
+        const score_t score = -qsearch(height + 1, -beta, -alpha);
         position.undo_move(move);
 
         if (score.ignore())
