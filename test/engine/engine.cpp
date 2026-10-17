@@ -357,9 +357,9 @@ bool run_mate_tests() {
         case_t{"1k1r4/pp1b1R2/3q2pp/4p3/2B5/4Q3/PPP2B2/2K5 b - -", 5, 5,
                "mate in 3 at depth 5"},
         case_t{"4r1k1/pp4pp/8/q1p1N3/5P2/1P4P1/P6P/3Q2K1 w - -", 9, 9,
-               "mate in 5 at depth 9"}
-        // case_t{"n1N3br/2p1Bpkr/1pP2R1b/pP1p1PpR/Pp4P1/1P6/1K1P4/8 w - -", 18, 11,
-        //        "mate in 6 at selective depth 18"}
+               "mate in 5 at depth 9"},
+        // case_t{"n1N3br/2p1Bpkr/1pP2R1b/pP1p1PpR/Pp4P1/1P6/1K1P4/8 w - -", 21, 11,
+        //        "mate in 6 at selective depth 21"}
         // case_t{"r3k3/1pp1p1Kp/1p2P3/1p6/2N5/P2P2pr/5B1p/3Q1R2 w q -", 15, 15,
         //        "mate in 8 at depth 15"}
     };

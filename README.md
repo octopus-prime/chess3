@@ -235,15 +235,15 @@ greater selective depth. Nominal depth is not a guarantee that every line is
 searched that deeply; quiet sacrifices and zugzwang remain potential weaknesses.
 
 - Reverse futility pruning applies at Non-PV nodes through depth seven, outside
-  check and decisive beta windows, with an `80 * depth` centipawn margin.
+  check and decisive beta windows, with a `160 * depth` evaluation-unit margin.
 - Null-move pruning requires a Non-PV node at depth three or greater, outside
   check, a non-decisive beta, a preceding real move, non-pawn/non-king material,
   more than eight legal moves, and static evaluation at least beta. Its reduction
-  is `2 + depth / 3 + min((static_eval - beta) / 200, 3)`, capped at `depth - 1`.
+  is `2 + depth / 3 + min((static_eval - beta) / 400, 3)`, capped at `depth - 1`.
   This is guarded, not verified, null-move pruning.
 - At shallow Non-PV nodes, late quiet moves are skipped after `3 + depth * depth`
   quiet candidates (through depth five), or when static evaluation plus
-  `100 + 120 * depth` cannot reach alpha (through depth three). Losing tactical
+  `200 + 240 * depth` cannot reach alpha (through depth three). Losing tactical
   moves with SEE below `-100 * depth` may be skipped through depth four.
   These rules retain at least one searched move and protect evasions, checking
   moves, promotions, killers, advanced pawn pushes, and decisive alpha windows.
@@ -255,13 +255,19 @@ searched that deeply; quiet sacrifices and zugzwang remain potential weaknesses.
   An alpha improvement triggers a full-depth null-window re-search, followed by
   a full-window PV search when necessary.
 - Quiescence outside check filters negative-SEE captures and captures whose
-  material gain plus a 150-centipawn margin cannot reach alpha. Promotions and
+  twice the material gain plus a 300-evaluation-unit margin cannot reach alpha.
+  Promotions and
   checking moves are exempt. Sorting uses inexpensive victim/attacker values
   rather than repeatedly running SEE. In check, every legal evasion is retained.
 - Mate-distance bounds constrain non-root nodes. TT bounds cause direct cutoffs
   only at Non-PV nodes rather than narrowing a PV window. Aspiration starts at
-  depth five for non-mate scores and repeatedly widens failed bounds until the
+  depth five for non-mate scores with an initial half-window of `50 + 4 * depth`
+  evaluation units and repeatedly widens failed bounds until the
   result fits or the full window is reached.
+
+Evaluation-based margins use the doubled NNUE score scale (`/ 32`). Material
+values and SEE thresholds retain their existing scale; delta pruning converts
+material gain to evaluation units before comparing it with alpha.
 
 Clock polling is amortized over 1024 nodes in both full search and quiescence.
 Aborted iterations restore the position and keep the last completed score and

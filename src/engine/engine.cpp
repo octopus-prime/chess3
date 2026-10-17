@@ -116,7 +116,7 @@ score_t engine_t::operator()(const ply_t max_depth, const std::chrono::steady_cl
 }
 
 score_t engine_t::asearch(const score_t eval, const ply_t depth) noexcept {
-    int delta = 25 + 2 * depth;
+    int delta = 50 + 4 * depth;
     int alpha = depth < 5 || eval.decisive() ? MIN : std::max(int{MIN}, int(eval) - delta);
     int beta = depth < 5 || eval.decisive() ? MAX : std::min(int{MAX}, int(eval) + delta);
     for (;;) {
@@ -184,14 +184,14 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
 
     const score_t static_eval = in_check ? score_t{DRAW} : evaluate();
     if (!PV && !in_check && depth <= 7 && !beta.decisive() &&
-        static_eval - 80 * depth >= beta)
+        static_eval - 160 * depth >= beta)
         return static_eval;
 
     // Null Move Pruning
     {
         if (!PV && depth >= 3 && !in_check && !beta.decisive() && _position.last_move() != move_t{} && !(_position.by(_position.side()) & ~_position.by(_position.side(), P, K)).empty() && moves.size() > 8 && static_eval >= beta) {
             const int R = std::min(int{depth} - 1, 2 + depth / 3 +
-                std::min((int(static_eval) - int(beta)) / 200, 3));
+                std::min((int(static_eval) - int(beta)) / 400, 3));
             _position.do_null_move();
             const score_t score = -search<false>(depth - 1 - R, height + 1, score_e(-beta), score_e(-beta + 1));
             _position.undo_null_move();
@@ -220,7 +220,7 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
             !alpha.decisive() && !advanced_pawn && move != killers[0] && move != killers[1];
         if (prune && !is_tactical && depth <= 5 &&
             (quiet_count > 3 + depth * depth ||
-             (depth <= 3 && static_eval + 100 + 120 * depth <= alpha)) &&
+             (depth <= 3 && static_eval + 200 + 240 * depth <= alpha)) &&
             !_position.check(move))
             continue;
         if (prune && is_tactical && depth <= 4 && move.promotion() == NO_TYPE &&
@@ -323,7 +323,7 @@ score_t engine_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
                 return true;
             const int gain = _position.at(move.to()).type() == NO_TYPE
                 ? PAWN : int(score_t{_position.at(move.to()).type()});
-            if ((!alpha.decisive() && stand_pat + gain + 150 < alpha) || _position.see(move) < 0)
+            if ((!alpha.decisive() && stand_pat + 2 * gain + 300 < alpha) || _position.see(move) < 0)
                 return _position.check(move);
             return true;
         });
