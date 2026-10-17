@@ -8,14 +8,14 @@ module;
 
 export module core.position:decl;
 
-import types.hash;
-import types.square;
-import types.type;
-import types.piece;
-import types.side;
-import types.squares;
-import types.score;
-import core.move;
+export import types.hash;
+export import types.square;
+export import types.type;
+export import types.piece;
+export import types.side;
+export import types.squares;
+export import types.score;
+export import core.move;
 
 export namespace chess {
 

@@ -34,9 +34,9 @@ bool run_nnue_tests() {
     nnue->update(entry[WHITE], {}, std::span{active_features[WHITE]}.first(4));
     nnue->update(entry[BLACK], {}, std::span{active_features[BLACK]}.first(4));
 
-    bool passed = test_support::check(nnue->evaluate(entry[WHITE], entry[BLACK], 4) == -420,
+    bool passed = test_support::check(nnue->evaluate(entry[WHITE], entry[BLACK], 4) == -841,
                                       "nnue evaluate refresh white perspective");
-    passed &= test_support::check(nnue->evaluate(entry[BLACK], entry[WHITE], 4) == 562,
+    passed &= test_support::check(nnue->evaluate(entry[BLACK], entry[WHITE], 4) == 1125,
                                   "nnue evaluate refresh black perspective");
 
     // evaluation with update
@@ -57,9 +57,9 @@ bool run_nnue_tests() {
     nnue->update(entry[WHITE], std::span{removed_features[WHITE]}.first(2), std::span{added_features[WHITE]}.first(1));
     nnue->update(entry[BLACK], std::span{removed_features[BLACK]}.first(2), std::span{added_features[BLACK]}.first(1));
 
-    passed &= test_support::check(nnue->evaluate(entry[WHITE], entry[BLACK], 3) == 8,
+    passed &= test_support::check(nnue->evaluate(entry[WHITE], entry[BLACK], 3) == 17,
                                   "nnue evaluate update white perspective");
-    passed &= test_support::check(nnue->evaluate(entry[BLACK], entry[WHITE], 3) == 23,
+    passed &= test_support::check(nnue->evaluate(entry[BLACK], entry[WHITE], 3) == 47,
                                   "nnue evaluate update black perspective");
 
     return passed;

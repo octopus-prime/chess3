@@ -5,7 +5,7 @@ module;
 
 export module engine.uci;
 
-import engine.negamax;
+import engine.engine;
 
 export namespace chess {
 
@@ -19,7 +19,7 @@ private:
     void position(const std::string_view args) noexcept;
     void go(const std::string_view args) noexcept;
 
-    negamax_t engine;
+    engine_t engine;
 };
 
 } // namespace chess

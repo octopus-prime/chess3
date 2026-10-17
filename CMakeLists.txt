@@ -29,7 +29,6 @@ file(GLOB_RECURSE nnue_modules CONFIGURE_DEPENDS
 file(GLOB_RECURSE nnue_sources CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/nnue/*.cpp"
 )
-list(REMOVE_ITEM nnue_sources "${CMAKE_CURRENT_SOURCE_DIR}/src/nnue/main.cpp")
 
 # add_compile_options(-fprofile-generate)
 # add_link_options(-fprofile-generate)
@@ -70,11 +69,8 @@ target_sources(chess_engine
 add_executable(perft src/core/main.cpp)
 target_link_libraries(perft PRIVATE chess_core)
 
-add_executable(nnue_demo src/nnue/main.cpp)
-target_link_libraries(nnue_demo PRIVATE chess_nnue)
-
-add_executable(demo src/engine/main.cpp)
-target_link_libraries(demo PRIVATE chess_engine)
+add_executable(chess3 src/engine/main.cpp)
+target_link_libraries(chess3 PRIVATE chess_engine)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -103,18 +99,18 @@ if(BUILD_TESTING)
 
     add_executable(chess_engine_tests
         test/engine/main.cpp
-        test/engine/negamax.cpp
+        test/engine/engine.cpp
         test/engine/evaluator.cpp
         test/engine/uci.cpp
     )
     target_include_directories(chess_engine_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/test")
     target_link_libraries(chess_engine_tests PRIVATE chess_engine)
-    foreach(suite IN ITEMS negamax evaluator mates uci)
+    foreach(suite IN ITEMS engine evaluator mates uci)
         add_test(NAME chess.${suite} COMMAND chess_engine_tests ${suite})
         set_tests_properties(chess.${suite} PROPERTIES LABELS engine)
     endforeach()
     set_tests_properties(chess.uci PROPERTIES TIMEOUT 10)
-    add_test(NAME chess.engine COMMAND chess_engine_tests)
+    add_test(NAME chess.engine.all COMMAND chess_engine_tests)
     set_tests_properties(chess.types PROPERTIES LABELS types)
-    set_tests_properties(chess.engine PROPERTIES LABELS engine)
+    set_tests_properties(chess.engine.all PROPERTIES LABELS engine)
 endif()
