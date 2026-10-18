@@ -50,6 +50,7 @@ private:
     transposition_t _transposition;
     killer_t _killer;
     history_t _history;
+    continuation_history_t _continuation;
     evaluator_t _evaluator;
     size_t _nodes;
     std::chrono::steady_clock::time_point _end;

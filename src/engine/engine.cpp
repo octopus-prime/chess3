@@ -43,6 +43,7 @@ void engine_t::clear() noexcept {
     _transposition.clear();
     _killer.clear();
     _history.clear();
+    _continuation.clear();
     _nodes = 0;
 }
 
@@ -229,7 +230,10 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
     }
 
     const auto killers = _killer.get(height);
-    auto ordered = ordered_moves(_position, moves, best_move, killers, _history);
+    const auto previous_move = _position.last_move();
+    history_t* continuation = previous_move == move_t{} ? nullptr :
+        &_continuation.get(_position.at(previous_move.to()), previous_move.to());
+    auto ordered = ordered_moves(_position, moves, best_move, killers, _history, continuation);
 
     size_t move_count = 0;
     size_t quiet_count = 0;
@@ -286,9 +290,15 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
             if (!_position.tactical(move)) {
                 _killer.put(move, height);
                 const int bonus = history_t::bonus(depth);
-                _history.update(_position.at(move.from()), move.to(), bonus);
+                const auto update_history = [&](const move_t quiet, const int value) {
+                    const auto piece = _position.at(quiet.from());
+                    _history.update(piece, quiet.to(), value);
+                    if (continuation)
+                        continuation->update(piece, quiet.to(), value);
+                };
+                update_history(move, bonus);
                 for (const move_t previous : std::span{searched_quiets}.first(quiets_searched - 1))
-                    _history.update(_position.at(previous.from()), previous.to(), -bonus);
+                    update_history(previous, -bonus);
             }
             return beta;
         }

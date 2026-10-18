@@ -228,6 +228,17 @@ the bonus clamped to `[-16384, 16384]` and arithmetic in `int`. Captures and
 promotions do not update history. Each `engine_t` owns its table and retains it
 across iterative-deepening calls; constructing a new search starts with zero history.
 
+Quiet ordering also adds a one-ply continuation-history score, indexed by the
+previous move's colored piece on its destination and the current move's colored
+piece and destination. Quiet cutoffs apply the same gravity bonus and searched-quiet
+penalties to this contextual table. The previous move may be tactical; a promoted
+piece uses its promoted type, and castling uses the king's destination. Positions
+without a previous move, including immediately after a null move, use ordinary
+history alone. Continuation scores do not change the LMR formula or tactical phases.
+The fixed-size table uses about 1.5 MiB, allocated once when constructing the engine;
+searching and clearing it perform no allocations. `clear()` resets both histories,
+including the existing UCI clearing after each search.
+
 ## Selective search
 
 [engine.cpp](src/engine/engine.cpp) deliberately trades exhaustive coverage for

@@ -86,7 +86,7 @@ bool test_tt_mate_scores() {
     return passed;
 }
 
-bool test_move_ordering() {
+bool test_move_ordering(const bool with_continuation = false) {
     using namespace chess;
     const position_t position{"4k3/P7/8/3pP3/8/8/8/4K1N1 w - d6 0 1"};
     std::array<move_t, 256> buffer;
@@ -107,14 +107,19 @@ bool test_move_ordering() {
                                       "ordering fixture includes quiet killer moves");
 
     history_t history;
+    history_t continuation;
     for (size_t i = 0; i < legal_moves.size(); ++i) {
         const move_t move = original[i];
         if (!position.tactical(move) && move != killers[0] && move != killers[1])
             history.update(position.at(move.from()), move.to(),
                            static_cast<int>((legal_moves.size() - i) * 32));
+        if (!position.tactical(move))
+            continuation.update(position.at(move.from()), move.to(),
+                                static_cast<int>(i * 64));
     }
 
-    auto ordered = ordered_moves(position, moves, best, killers, history);
+    auto ordered = ordered_moves(position, moves, best, killers, history,
+                                 with_continuation ? &continuation : nullptr);
     std::array<move_t, 256> actual;
     size_t count{};
     int previous_phase = -1;
@@ -150,10 +155,13 @@ bool test_move_ordering() {
         }
         if (phase == previous_phase && phase == 3) {
             const auto previous_score = history.get(position.at(previous_move.from()),
-                                                    previous_move.to());
-            const auto current_score = history.get(position.at(move.from()), move.to());
+                                                    previous_move.to()) +
+                (with_continuation ? continuation.get(position.at(previous_move.from()),
+                                                      previous_move.to()) : 0);
+            const auto current_score = history.get(position.at(move.from()), move.to()) +
+                (with_continuation ? continuation.get(position.at(move.from()), move.to()) : 0);
             passed &= test_support::check(previous_score >= current_score,
-                                          "quiet moves are sorted by history");
+                                          "quiet moves are sorted by combined history");
         }
         if (phase == previous_phase && phase == 4)
             passed &= test_support::check(position.see(previous_move) >= position.see(move),
@@ -167,6 +175,77 @@ bool test_move_ordering() {
     passed &= test_support::check(count == legal_moves.size(), "all legal moves are ordered");
     passed &= test_support::check(phase_counts[0] == 1 && phase_counts[2] == 2,
                                   "TT move and both killers appear in their phases");
+    return passed;
+}
+
+bool test_continuation_history() {
+    using namespace chess;
+    continuation_history_t continuation;
+    auto& reply = continuation.get(BN, f6);
+    bool passed = test_support::check(reply.get(WN, f3) == 0,
+                                      "continuation history starts at zero");
+    reply.update(WN, f3, 100);
+    reply.update(WN, f3, 100);
+    reply.update(WN, f3, -100);
+    passed &= test_support::check(reply.get(WN, f3) == 99,
+                                  "continuation history uses history gravity");
+    passed &= test_support::check(
+        continuation.get(WN, f6).get(WN, f3) == 0 &&
+        continuation.get(BB, f6).get(WN, f3) == 0 &&
+        continuation.get(BN, e6).get(WN, f3) == 0 &&
+        reply.get(BN, f3) == 0 && reply.get(WB, f3) == 0 && reply.get(WN, e3) == 0,
+        "continuation history isolates both colored pieces and destinations");
+    reply.update(WN, f3, 1000000);
+    reply.update(WB, c4, -1000000);
+    passed &= test_support::check(reply.get(WN, f3) == history_t::LIMIT &&
+                                  reply.get(WB, c4) == -history_t::LIMIT,
+                                  "continuation rewards and penalties are bounded");
+    continuation.get(BK, h8).update(WK, a1, 2048);
+    continuation.clear();
+    bool cleared = true;
+    for (size_t previous_piece = 0; previous_piece < MAX_PIECE; ++previous_piece) {
+        for (size_t previous_to = 0; previous_to < MAX_SQUARE; ++previous_to) {
+            const auto& entry = continuation.get(piece_e(previous_piece), square_e(previous_to));
+            for (size_t piece = 0; piece <= BK; ++piece)
+                for (size_t to = 0; to < MAX_SQUARE; ++to)
+                    cleared &= entry.get(piece_e(piece), square_e(to)) == 0;
+        }
+    }
+    passed &= test_support::check(cleared, "clear resets every continuation context");
+    return passed;
+}
+
+bool test_history_search_reset() {
+    using namespace chess;
+    struct case_t {
+        std::string_view fen;
+        std::string_view moves;
+    };
+    constexpr std::array cases{
+        case_t{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", ""},
+        case_t{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+               "e2e4 d7d5 e4d5"},
+        case_t{"4k2r/8/8/8/8/8/8/R3K2R w KQk - 0 1", "e1g1"},
+        case_t{"4k3/P7/8/8/8/8/8/4K2R w - - 0 1", "a7a8n"},
+        case_t{"4k2r/8/8/3pP3/8/8/8/4K2R w - d6 0 1", "e5d6"}
+    };
+    bool passed = true;
+    for (const auto& test : cases) {
+        engine_t search{test.fen};
+        search.setup(test.fen, test.moves);
+        const auto score = test_search(search, 5);
+        const auto nodes = search.nodes();
+        std::array<move_t, MAX_PLY> first_buffer;
+        const auto first_pv = search.extract_pv(first_buffer, 5);
+        search.clear();
+        const auto repeated = test_search(search, 5);
+        std::array<move_t, MAX_PLY> second_buffer;
+        const auto second_pv = search.extract_pv(second_buffer, 5);
+        passed &= test_support::check(
+            !score.ignore() && repeated == score && search.nodes() == nodes &&
+                std::ranges::equal(first_pv, second_pv),
+            "clearing histories reproduces search after normal and special moves");
+    }
     return passed;
 }
 
@@ -393,6 +472,9 @@ bool run_mate_tests() {
 bool run_engine_tests() {
     bool passed = test_tt_mate_scores();
     passed &= test_move_ordering();
+    passed &= test_move_ordering(true);
+    passed &= test_continuation_history();
+    passed &= test_history_search_reset();
     passed &= test_support::check(test_history_updates(), "piece-to history gravity updates");
     passed &= test_support::check(test_killer_heights(), "killers support the maximum ply height");
     passed &= test_search_draws();
