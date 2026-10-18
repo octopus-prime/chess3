@@ -2,6 +2,7 @@ module;
 
 #include <string_view>
 #include <istream>
+#include <thread>
 
 export module engine.uci;
 
@@ -18,8 +19,12 @@ private:
     void ucinewgame() noexcept;
     void position(const std::string_view args) noexcept;
     void go(const std::string_view args) noexcept;
+    void stop() noexcept;
+    void setoption(std::string_view args) noexcept;
 
     engine_t engine;
+    std::jthread worker;
+    int move_overhead = 20;
 };
 
 } // namespace chess

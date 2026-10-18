@@ -45,9 +45,11 @@ bool run_uci_tests() {
     passed &= test_support::check(remaining == "isready", "UCI quit stops consuming commands");
 
     passed &= test_support::check(
-        capture.output.str() == "id name chess3\nid author me\nuciok\n"
+        capture.output.str() == "id name chess3\nid author me\n"
+                  "option name Move Overhead type spin default 20 min 0 max 5000\nuciok\n"
                   "readyok\nreadyok\n"
-                  "id name chess3\nid author me\nuciok\n"
+                  "id name chess3\nid author me\n"
+                  "option name Move Overhead type spin default 20 min 0 max 5000\nuciok\n"
                   "readyok\n",
         "UCI identification and readiness responses; new game, unknown commands and quit are silent");
     return passed;

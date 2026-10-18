@@ -256,8 +256,11 @@ searched that deeply; quiet sacrifices and zugzwang remain potential weaknesses.
   a full-window PV search when necessary.
 - Quiescence outside check filters negative-SEE captures and captures whose
   material gain plus a 150-centipawn margin cannot reach alpha. Promotions and
-  checking moves are exempt. Sorting uses inexpensive victim/attacker values
-  rather than repeatedly running SEE. In check, every legal evasion is retained.
+  checking moves are exempt. Sorting uses `position_t::mvv_lva(move)` rather
+  than repeatedly running SEE: `16 * victim + promotion - attacker`, using
+  material values and counting the captured pawn for en passant. This shared
+  ordering score is not a static evaluation or an exchange-safety test.
+  In check, every legal evasion is retained.
 - Mate-distance bounds constrain non-root nodes. TT bounds cause direct cutoffs
   only at Non-PV nodes rather than narrowing a PV window. Aspiration starts at
   depth five for non-mate scores and repeatedly widens failed bounds until the
@@ -334,6 +337,9 @@ build independent test targets in parallel.
 - `chess.uci`: in-process command/response checks for identification, readiness,
   new games, unknown commands, EOF and quit. Responses use `std::cout`, captured
   by the tests with a standard C++ string stream.
+- `chess.uci.protocol`: when Python 3 is available, subprocess tests for readiness
+  during search, stop/restart, node/time/depth limits, invalid input, options,
+  terminal positions, quit, and EOF during search.
 - `chess.engine.all`: all Engine suites, including the longer mate regressions.
 
 CTest is available through VS Code's CMake Tools test integration. To run a suite
@@ -441,10 +447,88 @@ cd build
 ```
 
 `perft` prints perft timings for depths one through six over the benchmark FENs.
-`chess3` prints iterative-deepening search scores, cumulative nodes/timings, and
-principal variations for depths one through twelve over the same FENs.
-Tests do not run during application startup or benchmark timing. Engine already
-uses NNUE evaluation; UCI is not implemented.
+`chess3` runs a UCI command loop and uses NNUE evaluation. Tests do not run during
+application startup.
+
+## UCI and match testing
+
+Search runs on one worker thread, leaving the command loop responsive to
+`isready`, `stop`, and `quit`. A position change or new search stops and joins the
+previous search before changing engine state. EOF also stops search. The last
+completed iteration supplies the best move; if none completed, a legal move is
+returned. Positions without legal moves return `bestmove 0000`.
+
+Supported search limits (in any argument order) are `depth`, `nodes`, `movetime`,
+`wtime`, `btime`, `winc`, `binc`, `movestogo`, and `infinite`. `go infinite` waits
+for `stop` even if the maximum search depth is reached. Unsupported limits,
+malformed numbers, malformed positions, and illegal move lists produce
+`info string` diagnostics. Pondering, `searchmoves`, configurable Hash/Threads,
+and Chess960 are not implemented; this engine uses one search thread and a fixed
+16 MiB transposition table.
+
+`Move Overhead` is a UCI spin option (default 20 ms, range 0–5000 ms). Fixed
+movetime subtracts this reserve. Clock searches use a soft budget of remaining
+usable time divided by `movestogo` (default 25), plus 75% of the increment, capped
+by usable time. The hard budget is at most three times the soft budget and never
+exceeds usable time. Soft limits stop between iterations; hard limits are polled
+every 1024 nodes. Stop requests and node limits are checked at every node.
+Scheduling delays can still cause deadline overshoot, so retain a safety reserve.
+TT/history clearing after each UCI search is intentionally unchanged for now;
+`ucinewgame` resets the engine too.
+
+For interactive testing, enter each command after the previous response:
+
+```text
+uci
+isready
+position startpos
+go movetime 1000
+```
+
+Wait for `bestmove`, or send `stop`; sending `quit` immediately after `go`
+interrupts the search rather than waiting for the requested depth.
+
+### Automated fastchess matches
+
+Requires Python 3.11+ and `fastchess` on PATH (tested with alpha 1.8.2). Preserve
+the match-ready baseline binary **before** making a candidate change:
+
+```sh
+mkdir -p matches
+cp build/chess3 matches/baseline
+# Make one candidate change, build, and run tests.
+python3 scripts/match.py --baseline matches/baseline --candidate build/chess3 \
+  --rounds 4 --tc 2+0.02 --output matches/smoke
+```
+
+The bundled six-position EPD suite is only a protocol smoke test, not a strength
+test. For measurements, supply a large, suitably varied EPD or PGN opening suite:
+
+```sh
+python3 scripts/match.py --baseline matches/baseline --candidate build/chess3 \
+  --openings /path/to/openings.epd --rounds 1000 --tc 10+0.1 \
+  --concurrency 1 --output matches/experiment
+```
+
+Each round plays the same opening with colors reversed; the seed defaults to
+20261018. Both engines receive identical time controls and run with `build/` as
+their working directory so the network is found. `--engine-dir` overrides that
+directory. The runner snapshots both binaries and the opening suite, records
+their SHA-256 hashes, network hash, source revision/worktree status, fastchess
+version and exact command, and saves PGNs, console logs, and fastchess resume
+state in the output directory. Incomplete matches, abnormal PGN terminations
+(including time forfeits), and fastchess PV/protocol warnings make the runner
+return a failure status. Output directories must be new and are ignored
+by Git. Keep the working network unchanged throughout a match.
+
+Optional `--sprt` enables normalized-Elo bounds [0, 5] with alpha/beta 0.05.
+Choose a sufficiently large round cap; reaching that cap without crossing an
+SPRT boundary is inconclusive. Positive results require sufficient games and
+uncertainty reporting, not just a favorable small sample. Check PGNs/logs for
+crashes, illegal moves, and time forfeits before interpreting Elo. No
+evaluation-score-based resignation or draw adjudication is enabled.
+Fastchess lists baseline first in the summary, so its displayed Elo is baseline
+relative to candidate; inspect the player names when interpreting the sign.
 
 `core.perft` and `engine.engine` expose class declarations in their `.cppm`
 interfaces; runtime method definitions live in matching `.cpp` implementation

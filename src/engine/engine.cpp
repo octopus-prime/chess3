@@ -10,6 +10,9 @@ module;
 #include <ranges>
 #include <cmath>
 #include <chrono>
+#include <limits>
+#include <stop_token>
+#include <thread>
 
 module engine.engine;
 
@@ -62,10 +65,15 @@ std::span<move_t> engine_t::extract_pv(const std::span<move_t, MAX_PLY> buffer, 
         if (!entry || entry->move == move_t{})
             break;
 
+        std::array<move_t, 256> legal_buffer;
+        const auto legal = _position.generate_all_moves(legal_buffer);
+        if (std::ranges::find(legal, entry->move) == legal.end())
+            break;
         buffer[length++] = entry->move;
         _position.do_move(entry->move);
 
-        if (_position.repetition() >= 3 || _position.halfmove() >= 100)
+        // TT continuations need not represent a single search path; avoid cycles.
+        if (_position.repetition() >= 2 || _position.halfmove() >= 100)
             break;
     }
 
@@ -76,12 +84,26 @@ std::span<move_t> engine_t::extract_pv(const std::span<move_t, MAX_PLY> buffer, 
 }
 
 score_t engine_t::operator()(const ply_t max_depth, const std::chrono::steady_clock::duration duration) noexcept {
+    return run(max_depth, duration, duration, std::numeric_limits<size_t>::max(), {});
+}
+
+bool engine_t::interrupted() const noexcept {
+    return _stop.stop_requested() || _nodes >= _node_limit ||
+        ((_nodes & 1023) == 0 && std::chrono::steady_clock::now() >= _end);
+}
+
+score_t engine_t::run(const ply_t max_depth, const std::chrono::steady_clock::duration duration,
+                      const std::chrono::steady_clock::duration soft_limit,
+                      const size_t node_limit, const std::stop_token stop,
+                      const bool wait_for_stop) noexcept {
     using namespace std::chrono;
     std::array<chess::move_t, 256> buffer;
     char output[2048];
     const auto start = steady_clock::now();
     _nodes = 0;
     _end = start + duration;
+    _stop = stop;
+    _node_limit = node_limit;
     score_t score = qsearch(0, MIN, MAX);
     if (score.ignore())
         score = evaluate();
@@ -90,7 +112,7 @@ score_t engine_t::operator()(const ply_t max_depth, const std::chrono::steady_cl
     if (!legal.empty())
         best_move = legal.front();
     for (unsigned depth = 1; depth <= max_depth; ++depth) {
-        if (steady_clock::now() >= _end)
+        if (interrupted() || steady_clock::now() >= start + soft_limit)
             break;
         const score_t next = asearch(score, static_cast<ply_t>(depth));
         if (next.ignore())
@@ -109,7 +131,11 @@ score_t engine_t::operator()(const ply_t max_depth, const std::chrono::steady_cl
         if (!pv.empty())
             best_move = pv.front();
     }
-    const char* out_best = std::format_to(output, "bestmove {}\n", best_move);
+    while (wait_for_stop && !_stop.stop_requested())
+        std::this_thread::sleep_for(milliseconds{1});
+    const char* out_best = best_move == move_t{}
+        ? std::format_to(output, "bestmove 0000\n")
+        : std::format_to(output, "bestmove {}\n", best_move);
     std::fwrite(output, sizeof(char), size_t(out_best - output), stdout);
     std::fflush(stdout);
     return score;
@@ -137,7 +163,7 @@ score_t engine_t::asearch(const score_t eval, const ply_t depth) noexcept {
 
 template <bool PV>  
 score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta) noexcept {
-    if ((_nodes & 1023) == 0 && std::chrono::steady_clock::now() >= _end)
+    if (interrupted())
         return IGNORE;
 
     if (depth == 0 || height == MAX_PLY - 1)
@@ -282,7 +308,7 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
 }
 
 score_t engine_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
-    if ((_nodes & 1023) == 0 && std::chrono::steady_clock::now() >= _end)
+    if (interrupted())
         return IGNORE;
     ++_nodes;
 
@@ -331,8 +357,7 @@ score_t engine_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     }
 
     std::ranges::sort(moves, std::greater<>(), [&](const move_t& move) {
-        return 16 * int(score_t{_position.at(move.to()).type()}) +
-            int(score_t{move.promotion()}) - int(score_t{_position.at(move.from()).type()});
+        return _position.mvv_lva(move);
     });
 
     for (const move_t& move : moves) {

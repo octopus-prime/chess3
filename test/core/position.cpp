@@ -32,6 +32,7 @@ bool test_tactical_generation();
 constexpr bool test_tactical_query();
 bool test_check_queries();
 bool test_see();
+constexpr bool test_mvv_lva();
 bool test_king_slider_evasions();
 constexpr bool test_position_hash();
 bool test_hash_tree();
@@ -89,6 +90,7 @@ bool run_position_tests() {
     passed &= test_support::check(test_tactical_query(), "tactical move classification");
     passed &= test_support::check(test_check_queries(), "position and move check queries");
     passed &= test_support::check(test_see(), "static exchange evaluation");
+    passed &= test_support::check(test_mvv_lva(), "MVV/LVA captures, promotions, and en passant");
     passed &= test_support::check(test_king_slider_evasions(), "king slider evasions");
     passed &= test_support::check(test_position_hash(), "position hash identity");
     passed &= test_support::check(test_hash_tree(), "incremental hash tree");
@@ -1068,6 +1070,32 @@ bool test_check_queries() {
     }
     return passed;
 }
+
+constexpr bool test_mvv_lva() {
+    const position_t captures{"4k3/8/8/3q4/2P1N3/8/8/4K3 w - -"};
+    const int queen = score_t{Q};
+    const int pawn = score_t{P};
+    const int knight = score_t{N};
+    if (captures.mvv_lva({c4, d5}) != 16 * queen - pawn ||
+        captures.mvv_lva({e4, d6}) != -knight)
+        return false;
+    const position_t ep{"4k3/8/8/3pP3/8/8/8/4K3 w - d6"};
+    if (ep.mvv_lva({e5, d6}) != 15 * pawn)
+        return false;
+    for (const auto promotion : {Q, R, B, N}) {
+        const position_t white{"1r2k3/P7/8/8/8/8/8/4K3 w - -"};
+        const position_t black{"4k3/8/8/8/8/8/p7/1R2K3 b - -"};
+        const int bonus = score_t{promotion};
+        if (white.mvv_lva({a7, a8, promotion}) != bonus - pawn ||
+            white.mvv_lva({a7, b8, promotion}) != 16 * int(score_t{R}) + bonus - pawn ||
+            black.mvv_lva({a2, a1, promotion}) != bonus - pawn ||
+            black.mvv_lva({a2, b1, promotion}) != 16 * int(score_t{R}) + bonus - pawn)
+            return false;
+    }
+    return true;
+}
+
+static_assert(test_mvv_lva());
 
 bool test_see() {
     struct case_t {

@@ -5,6 +5,7 @@
 #include <limits>
 #include <type_traits>
 #include <algorithm>
+#include <stop_token>
 #include <ranges>
 #include <span>
 #include "test_support.hpp"
@@ -397,6 +398,19 @@ bool run_engine_tests() {
     passed &= test_search_draws();
     passed &= test_selective_search();
     passed &= test_search_timeout();
+    {
+        chess::engine_t search{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"};
+        for (const size_t limit : {size_t{1}, size_t{200}}) {
+            const auto score = search.run(40, search_timeout, search_timeout, limit, {});
+            passed &= test_support::check(!score.ignore() && search.nodes() <= limit,
+                                          "node-limited search preserves a score without exceeding its budget");
+        }
+        std::stop_source source;
+        source.request_stop();
+        const auto score = search.run(40, search_timeout, search_timeout, 200, source.get_token());
+        passed &= test_support::check(!score.ignore() && search.nodes() == 0,
+                                      "stop requested before search startup is not lost");
+    }
     for (const auto fen : {"k7/4P3/8/8/8/8/8/7K w - - 0 1",
                           "7k/8/8/8/8/8/4p3/K7 b - - 0 1"}) {
         chess::engine_t search{fen};
