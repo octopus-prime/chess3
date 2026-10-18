@@ -75,6 +75,6 @@ private:
     friend std::unique_ptr<nnue_t> load(std::string_view);
 };
 
-std::unique_ptr<nnue_t> load(std::string_view filename = "../nnue.bin");
+std::unique_ptr<nnue_t> load(std::string_view filename = "../nn-c9e480e92425.nnue");
 
 }

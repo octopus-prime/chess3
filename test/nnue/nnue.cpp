@@ -56,7 +56,7 @@ bool test_network_errors() {
             throw std::runtime_error{"unable to write NNUE loader test fixture"};
     }
     passed &= expect_error("unsupported NNUE network format");
-    std::filesystem::copy_file("../nnue.bin", path, std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::copy_file("../nn-c9e480e92425.nnue", path, std::filesystem::copy_options::overwrite_existing);
     {
         std::ofstream stream{path, std::ios::binary | std::ios::app};
         stream.put('\0');
