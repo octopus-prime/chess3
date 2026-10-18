@@ -1,6 +1,7 @@
 module;
 
 #include <cstdint>
+#include <algorithm>
 #include <memory>
 #include <span>
 
@@ -22,36 +23,41 @@ evaluator_t::evaluator_t()
 }
 
 score_t evaluator_t::evaluate(const position_t& position) noexcept {
-    const nnue::entry_t& t = refresh(position, position.side());
-    const nnue::entry_t& o = refresh(position, ~position.side());
-    auto score = _nnue->evaluate(t, o, position.by().size());
+    const auto features = nnue::active_features(position, _features);
+    const nnue::entry_t& t = refresh(position, position.side(), features[position.side()]);
+    const nnue::entry_t& o = refresh(position, ~position.side(), features[~position.side()]);
+    const auto side = position.side();
+    auto score = _nnue->evaluate(t, o, position.by().size(),
+                                !position.by(side, Q).empty(),
+                                !position.by(~side, Q).empty());
     // score -= score * position.halfmove() / 212;
     return score_e(score);
 }
 
-const nnue::entry_t& evaluator_t::refresh(const position_t& position, const side_e side) noexcept {
+const nnue::entry_t& evaluator_t::refresh(const position_t& position, const side_e side,
+                                        const std::span<const uint32_t> features) noexcept {
     auto king = position.by(side, K).front();
     auto& entry = _entries[static_cast<size_t>(side) * MAX_SQUARE + static_cast<size_t>(king)];
-    uint16_t added_features[32];
-    uint16_t removed_features[32];
-    size_t added_count = 0;
     size_t removed_count = 0;
-
-    for (piece_t piece : {WP, WN, WB, WR, WQ, WK, BP, BN, BB, BR, BQ, BK}) {
-        squares_t oldBB = squares_e(entry.pieces[piece.type()] & entry.colors[piece.side()]);
-        squares_t newBB = position.by(piece);
-        for (square_t square : oldBB & ~newBB)
-            removed_features[removed_count++] = nnue::make_index(king, square, piece, side);
-        for (square_t square : newBB & ~oldBB)
-            added_features[added_count++] = nnue::make_index(king, square, piece, side);
+    size_t added_count = 0;
+    const auto previous = std::span{entry.features}.first(entry.feature_count);
+    // Mark cached features, then clear those still present in the new position.
+    for (const auto feature : previous)
+        _membership[feature] = 1;
+    for (const auto feature : features) {
+        _added[added_count] = feature;
+        added_count += !_membership[feature];
+        _membership[feature] = 0;
     }
-
-    _nnue->update(entry, std::span{removed_features}.first(removed_count), std::span{added_features}.first(added_count));
-
-    for (side_e c : {WHITE, BLACK})
-        entry.colors[c] = position.by(c);
-    for (type_e p : {P, N, B, R, Q, K})
-        entry.pieces[p] = position.by(p);
+    for (const auto feature : previous) {
+        _removed[removed_count] = feature;
+        removed_count += _membership[feature];
+        _membership[feature] = 0;
+    }
+    _nnue->update(entry, std::span{_removed}.first(removed_count),
+                  std::span{_added}.first(added_count));
+    std::ranges::copy(features, entry.features.begin());
+    entry.feature_count = features.size();
 
     return entry;
 }

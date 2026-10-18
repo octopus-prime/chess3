@@ -1,276 +1,321 @@
 module;
 
-#include <fstream>
-#include <stdexcept>
-#include <span>
-#include <ranges>
 #include <algorithm>
+#include <array>
+#include <bit>
+#include <cassert>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
+#include <fstream>
 #include <memory>
+#include <span>
+#include <stdexcept>
+#include <string>
 
 #include <immintrin.h>
 
 module nnue.nnue;
 
-import types.square;
-import types.side;
-import types.piece;
+import core.attacks.lookup;
+import types.squares;
 
 namespace chess::nnue {
 
-enum {
-    PS_NONE     = 0,
-    PS_W_PAWN   = 0,
-    PS_B_PAWN   = 1 * MAX_SQUARE,
-    PS_W_KNIGHT = 2 * MAX_SQUARE,
-    PS_B_KNIGHT = 3 * MAX_SQUARE,
-    PS_W_BISHOP = 4 * MAX_SQUARE,
-    PS_B_BISHOP = 5 * MAX_SQUARE,
-    PS_W_ROOK   = 6 * MAX_SQUARE,
-    PS_B_ROOK   = 7 * MAX_SQUARE,
-    PS_W_QUEEN  = 8 * MAX_SQUARE,
-    PS_B_QUEEN  = 9 * MAX_SQUARE,
-    PS_KING     = 10 * MAX_SQUARE,
-    PS_NB       = 11 * MAX_SQUARE
+namespace {
+
+constexpr int target_map[5][6] = {
+    {-1, 0, -1, 1, -1, -1},
+    {0, 1, 2, 3, 4, -1},
+    {0, 1, 2, 3, -1, -1},
+    {0, 1, 2, 3, -1, -1},
+    {0, 1, 2, 3, 4, -1}
 };
+constexpr uint32_t target_counts[] = {0, 4, 10, 8, 8, 10};
+constexpr uint32_t attack_counts[] = {0, 84, 336, 560, 896, 1456};
+constexpr uint32_t attack_offsets[] = {0, 0, 336, 3696, 8176, 15344};
 
-constexpr uint16_t PieceSquareIndex[MAX_SIDE][MAX_PIECE] = {
-    {PS_NONE, PS_W_PAWN, PS_W_KNIGHT, PS_W_BISHOP, PS_W_ROOK, PS_W_QUEEN, PS_KING, PS_NONE, PS_NONE, PS_B_PAWN, PS_B_KNIGHT, PS_B_BISHOP, PS_B_ROOK, PS_B_QUEEN, PS_KING, PS_NONE},
-    {PS_NONE, PS_B_PAWN, PS_B_KNIGHT, PS_B_BISHOP, PS_B_ROOK, PS_B_QUEEN, PS_KING, PS_NONE, PS_NONE, PS_W_PAWN, PS_W_KNIGHT, PS_W_BISHOP, PS_W_ROOK, PS_W_QUEEN, PS_KING, PS_NONE}
-};
-
-constexpr uint16_t OrientTBL[MAX_SIDE][MAX_SQUARE] = {
-    { h1, h1, h1, h1, a1, a1, a1, a1,
-    h1, h1, h1, h1, a1, a1, a1, a1,
-    h1, h1, h1, h1, a1, a1, a1, a1,
-    h1, h1, h1, h1, a1, a1, a1, a1,
-    h1, h1, h1, h1, a1, a1, a1, a1,
-    h1, h1, h1, h1, a1, a1, a1, a1,
-    h1, h1, h1, h1, a1, a1, a1, a1,
-    h1, h1, h1, h1, a1, a1, a1, a1 },
-    { h8, h8, h8, h8, a8, a8, a8, a8,
-    h8, h8, h8, h8, a8, a8, a8, a8,
-    h8, h8, h8, h8, a8, a8, a8, a8,
-    h8, h8, h8, h8, a8, a8, a8, a8,
-    h8, h8, h8, h8, a8, a8, a8, a8,
-    h8, h8, h8, h8, a8, a8, a8, a8,
-    h8, h8, h8, h8, a8, a8, a8, a8,
-    h8, h8, h8, h8, a8, a8, a8, a8 }
-};
-
-#define B(v) (v * PS_NB)
-constexpr uint16_t KingBuckets[MAX_SIDE][MAX_SQUARE] = {
-    { B(28), B(29), B(30), B(31), B(31), B(30), B(29), B(28),
-    B(24), B(25), B(26), B(27), B(27), B(26), B(25), B(24),
-    B(20), B(21), B(22), B(23), B(23), B(22), B(21), B(20),
-    B(16), B(17), B(18), B(19), B(19), B(18), B(17), B(16),
-    B(12), B(13), B(14), B(15), B(15), B(14), B(13), B(12),
-    B( 8), B( 9), B(10), B(11), B(11), B(10), B( 9), B( 8),
-    B( 4), B( 5), B( 6), B( 7), B( 7), B( 6), B( 5), B( 4),
-    B( 0), B( 1), B( 2), B( 3), B( 3), B( 2), B( 1), B( 0) },
-    { B( 0), B( 1), B( 2), B( 3), B( 3), B( 2), B( 1), B( 0),
-    B( 4), B( 5), B( 6), B( 7), B( 7), B( 6), B( 5), B( 4),
-    B( 8), B( 9), B(10), B(11), B(11), B(10), B( 9), B( 8),
-    B(12), B(13), B(14), B(15), B(15), B(14), B(13), B(12),
-    B(16), B(17), B(18), B(19), B(19), B(18), B(17), B(16),
-    B(20), B(21), B(22), B(23), B(23), B(22), B(21), B(20),
-    B(24), B(25), B(26), B(27), B(27), B(26), B(25), B(24),
-    B(28), B(29), B(30), B(31), B(31), B(30), B(29), B(28) }
-};
-#undef B
-
-// uint16_t make_index(const uint16_t king_square, const uint16_t piece_square, const uint16_t piece_type, const int Perspective) noexcept {
-//     return (piece_square ^ OrientTBL[Perspective][king_square]) + PieceSquareIndex[Perspective][piece_type] + KingBuckets[Perspective][king_square];
-// }
-
-uint16_t make_index(const square_t king_square, const square_t piece_square, const piece_t piece_type, const side_t side) noexcept {
-    return (uint16_t(piece_square) ^ OrientTBL[side][king_square]) + PieceSquareIndex[side][piece_type] + KingBuckets[side][king_square];
+uint8_t orientation(const square_t king, const side_t perspective) noexcept {
+    return (king.file() < e ? 0 : 7) ^ (56 * perspective);
 }
 
-template <typename T, typename U, std::size_t I>
-    requires(sizeof(T) % sizeof(U) == 0)
-auto span_cast(const std::span<U, I> span) noexcept {
-    constexpr auto O = I / (sizeof(T) / sizeof(U));
-    return std::span<T, O>{reinterpret_cast<T*>(span.data()), O};
-}
-
-void mul_clipped_relu(const std::span<const int16_t, L1> input, const std::span<uint8_t, L1 / 2> output) noexcept {
-    const auto in0 = span_cast<const __m512i>(input.template first<L1 / 2>());
-    const auto in1 = span_cast<const __m512i>(input.template last<L1 / 2>());
-    const auto out = span_cast<__m256i>(output);
-    const __m512i min = _mm512_setzero_si512();
-    const __m512i max = _mm512_set1_epi16(127 * 2);
-    for (size_t i = 0; i < out.size(); ++i) {
-        const __m512i sum0 = _mm512_slli_epi16(_mm512_max_epi16(_mm512_min_epi16(in0[i], max), min), 7);
-        const __m512i sum1 = _mm512_min_epi16(in1[i], max);
-        const __m512i prod = _mm512_mulhi_epi16(sum0, sum1);
-        out[i] = _mm256_packus_epi16(_mm512_castsi512_si256(prod), _mm512_extracti32x8_epi32(prod, 1));
+squares_t attacks(const type_t type, const square_t from, const squares_t occupied,
+                  const side_t color) noexcept {
+    using namespace attacks::lookup;
+    switch (type) {
+        case P: return pawn(from, color);
+        case N: return knight(from);
+        case B: return bishop(from, occupied);
+        case R: return rook(from, occupied);
+        case Q: return queen(from, occupied);
+        default: return {};
     }
 }
 
-void sqr_clipped_relu(const std::span<const int32_t, L2> input, const std::span<uint8_t, L2> output) noexcept {
-    std::ranges::transform(span_cast<const __m128i>(input) | std::views::chunk(4), span_cast<__m128i>(output).begin(), [](auto&& chunk) {
-        __m128i words0 = _mm_packs_epi32(chunk[0], chunk[1]);
-        __m128i words1 = _mm_packs_epi32(chunk[2], chunk[3]);
-        words0 = _mm_srli_epi16(_mm_mulhi_epi16(words0, words0), 3);
-        words1 = _mm_srli_epi16(_mm_mulhi_epi16(words1, words1), 3);
-        return _mm_packs_epi16(words0, words1);
-    });
+struct threat_table_t {
+    uint16_t index[6][64][64]{};
+
+    threat_table_t() noexcept {
+        for (const type_t type : {P, N, B, R, Q}) {
+            uint32_t offset = 0;
+            for (square_t from = a1; from <= h8; ++from) {
+                if (type == P && (from.rank() == _1 || from.rank() == _8))
+                    continue;
+                for (square_t to = a1; to <= h8; ++to) {
+                    const auto destinations = attacks(type, from, {}, to < from ? BLACK : WHITE);
+                    const auto preceding = (uint64_t{1} << to) - 1;
+                    index[type][from][to] =
+                        static_cast<uint16_t>(offset + std::popcount(uint64_t(destinations) & preceding));
+                }
+                offset += attacks(type, from, {}, WHITE).size();
+            }
+        }
+    }
+};
+
+const threat_table_t threat_table;
+
+constexpr squares_t pawn_pair_files[] = {
+    {a, b}, {a, b, c}, {b, c, d}, {c, d, e},
+    {d, e, f}, {e, f, g}, {f, g, h}, {g, h}
+};
+
+void read_bytes(std::istream& stream, void* destination, const size_t size) {
+    if (!stream.read(static_cast<char*>(destination), static_cast<std::streamsize>(size)))
+        throw std::runtime_error{"truncated NNUE network"};
 }
 
-void clipped_relu(const std::span<const int32_t, L2> input, const std::span<uint8_t, L2> output) noexcept {
-    std::ranges::transform(span_cast<const __m128i>(input) | std::views::chunk(4), span_cast<__m128i>(output).begin(), [](auto&& chunk) {
-        const __m128i words0 = _mm_srli_epi16(_mm_packus_epi32(chunk[0], chunk[1]), 6);
-        const __m128i words1 = _mm_srli_epi16(_mm_packus_epi32(chunk[2], chunk[3]), 6);
-        return _mm_packs_epi16(words0, words1);
-    });
+template <typename T>
+T read_integer(std::istream& stream) {
+    static_assert(std::endian::native == std::endian::little);
+    T value;
+    read_bytes(stream, &value, sizeof(value));
+    return value;
 }
 
-void clipped_relu(const std::span<const int32_t, L3> input, const std::span<uint8_t, L3> output) noexcept {
-    std::ranges::transform(span_cast<const __m256i>(input) | std::views::chunk(4), span_cast<__m256i>(output).begin(), [](auto&& chunk) {
-        const __m256i words0 = _mm256_srli_epi16(_mm256_packus_epi32(chunk[0], chunk[1]), 6);
-        const __m256i words1 = _mm256_srli_epi16(_mm256_packus_epi32(chunk[2], chunk[3]), 6);
-        return _mm256_permutevar8x32_epi32(_mm256_packs_epi16(words0, words1), _mm256_set_epi32(7, 3, 6, 2, 5, 1, 4, 0));
-    });
+template <size_t Inputs>
+void read_affine(std::istream& stream, int32_t (&biases)[32],
+                 int8_t (&weights)[Inputs / 4][32][4]) {
+    read_bytes(stream, biases, sizeof(biases));
+    std::array<int8_t, Inputs> row;
+    for (size_t out = 0; out < 32; ++out) {
+        read_bytes(stream, row.data(), row.size());
+        for (size_t in = 0; in < Inputs; ++in)
+            weights[in / 4][out][in % 4] = row[in];
+    }
 }
 
-void affine_tranform(const std::span<const uint8_t, L1> input, const std::span<const int8_t[L2], L1> weights, const std::span<const int32_t, L2> biases, const std::span<int32_t, L2> output) noexcept {
-    // column major
-    const auto input32 = span_cast<const int32_t>(input); // 768
-    alignas(64) uint16_t buf[input32.size()];
+template <size_t Inputs>
+void affine(const uint8_t (&input)[Inputs], const int8_t (&weights)[Inputs / 4][32][4],
+            const int32_t (&biases)[32], int32_t (&output)[32]) noexcept {
+    auto low = _mm512_load_si512(biases);
+    auto high = _mm512_load_si512(biases + 16);
+    const auto accumulate = [&](const size_t i, const uint32_t word) {
+        const auto value = _mm512_set1_epi32(std::bit_cast<int32_t>(word));
+        low = _mm512_dpbusd_epi32(low, value, _mm512_load_si512(weights[i][0]));
+        high = _mm512_dpbusd_epi32(high, value, _mm512_load_si512(weights[i][16]));
+    };
+    if constexpr (Inputs == L1) {
+        // Each mask bit selects one nonzero four-byte VNNI input group.
+        for (size_t base = 0; base < Inputs / 4; base += 16) {
+            uint32_t nonzero = _mm512_cmpneq_epi32_mask(
+                _mm512_load_si512(input + 4 * base), _mm512_setzero_si512());
+            while (nonzero) {
+                const size_t i = base + std::countr_zero(nonzero);
+                nonzero &= nonzero - 1;
+                uint32_t word;
+                std::memcpy(&word, input + 4 * i, sizeof(word));
+                accumulate(i, word);
+            }
+        }
+    } else {
+        for (size_t i = 0; i < Inputs / 4; ++i) {
+            uint32_t word;
+            std::memcpy(&word, input + 4 * i, sizeof(word));
+            if (word != 0)
+                accumulate(i, word);
+        }
+    }
+    _mm512_store_si512(output, low);
+    _mm512_store_si512(output + 16, high);
+}
 
-    const __m512i       increment    = _mm512_set1_epi16(32);
-    __m512i base = _mm512_set_epi16(31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16,
-                                    15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0);
-    auto count = 0;
-    for (auto&& chunk : span_cast<const __m512i>(input32) | std::views::chunk(2)) {
-        const __mmask16 mask0 = _mm512_test_epi32_mask(chunk[0], chunk[0]);
-        const __mmask16 mask1 = _mm512_test_epi32_mask(chunk[1], chunk[1]);
-        const __mmask32 nnzMask = _mm512_kunpackw(mask1, mask0);
-        _mm512_mask_compressstoreu_epi16(buf + count, nnzMask, base);
-        count += std::popcount(nnzMask);
-        base = _mm512_add_epi16(base, increment);
+void activate(const int32_t (&input)[32], uint8_t* output, const int shift) noexcept {
+    for (size_t i = 0; i < 32; ++i) {
+        const int64_t value = input[i];
+        output[i] = static_cast<uint8_t>(std::min((value * value) >> (2 * shift + 7), int64_t{127}));
+        output[i + 32] = static_cast<uint8_t>(std::clamp(input[i] >> shift, 0, 127));
+    }
+}
+
+}
+
+uint32_t make_index(const square_t king, const square_t square, const piece_t piece,
+                    const side_t perspective, const bool opponent_has_queen) noexcept {
+    const auto relative_king = uint8_t(king) ^ (56 * perspective);
+    const uint32_t bucket = (7 - relative_king / 8) * 4 +
+        std::min(relative_king % 8, 7 - relative_king % 8);
+    const uint32_t piece_offset = piece.type() == K ? 640 :
+        128 * (piece.type() - P) + 64 * (piece.side() != perspective);
+    // K32Q2 mirrors horizontally in the opposite direction to threats and pawn pairs.
+    return PSQ_OFFSET + (uint32_t(square) ^ (bucket * 1408 +
+        704 * opponent_has_queen + piece_offset + (orientation(king, perspective) ^ 7)));
+}
+
+uint32_t threat_index(const square_t king, const square_t from, const square_t to,
+                      const piece_t attacker, const piece_t target, const side_t perspective) noexcept {
+    if (attacker.type() == K || target.type() == NO_TYPE)
+        return THREAT_INPUTS;
+    const int mapped = target_map[attacker.type() - 1][target.type() - 1];
+    const auto flip = orientation(king, perspective);
+    const auto oriented_from = uint8_t(from) ^ flip;
+    const auto oriented_to = uint8_t(to) ^ flip;
+    if (mapped < 0 || (oriented_from < oriented_to && attacker.type() == target.type() &&
+                      (attacker.side() != target.side() || attacker.type() != P)))
+        return THREAT_INPUTS;
+    const uint32_t block = attack_offsets[attacker.type()] +
+        29904 * (attacker.side() != perspective);
+    const uint32_t target_block = target_counts[attacker.type()] / 2 *
+        (target.side() != perspective) + mapped;
+    return block + target_block * attack_counts[attacker.type()] +
+        threat_table.index[attacker.type()][oriented_from][oriented_to];
+}
+
+uint32_t pair_index(const square_t king, const square_t from, const square_t to,
+                    const side_t color, const side_t paired_color, const side_t perspective) noexcept {
+    const auto flip = orientation(king, perspective);
+    const uint32_t first = 48 * (color != perspective) + (uint8_t(from) ^ flip) - 8;
+    const uint32_t second = 48 * (paired_color != perspective) + (uint8_t(to) ^ flip) - 8;
+    const auto high = std::max(first, second);
+    const auto low = std::min(first, second);
+    return THREAT_INPUTS + high * (high - 1) / 2 + low;
+}
+
+std::array<std::span<uint32_t>, 2> active_features(
+    const position_t& position, const std::span<feature_buffer_t, 2> buffers) noexcept {
+    std::array<size_t, 2> counts{};
+    const square_t kings[] = {position.by(WHITE, K).front(), position.by(BLACK, K).front()};
+    const bool queens[] = {!position.by(WHITE, Q).empty(), !position.by(BLACK, Q).empty()};
+    const auto occupied = position.by();
+    assert(occupied.size() <= 32 && position.by(P).size() <= 16);
+    for (const square_t from : occupied) {
+        const auto piece = position.at(from);
+        for (const side_t side : {WHITE, BLACK})
+            buffers[side][counts[side]++] = make_index(kings[side], from, piece, side, queens[~side]);
+        if (piece.type() == K)
+            continue;
+        for (const square_t to : attacks(piece.type(), from, occupied, piece.side()) & occupied) {
+            const auto target = position.at(to);
+            for (const side_t side : {WHITE, BLACK}) {
+                const auto index = threat_index(kings[side], from, to, piece, target, side);
+                if (index < THREAT_INPUTS)
+                    buffers[side][counts[side]++] = index;
+            }
+        }
     }
 
-    __m512i acc = _mm512_load_si512(biases.data());
-    for (auto i : std::span{buf}.first(count)) {
-        const __m512i in = _mm512_set1_epi32(input32[i]);
-        acc = _mm512_dpbusd_epi32(acc, in, _mm512_load_si512(weights[i * 4]));
+    auto pawns = position.by(P);
+    for (const square_t from : position.by(P)) {
+        pawns.reset(from);
+        for (const square_t to : pawns & pawn_pair_files[from.file()])
+            for (const side_t side : {WHITE, BLACK})
+                buffers[side][counts[side]++] = pair_index(
+                    kings[side], from, to, position.at(from).side(), position.at(to).side(), side);
     }
-
-    _mm512_store_si512(output.data(), acc);
+    return {std::span{buffers[WHITE]}.first(counts[WHITE]),
+            std::span{buffers[BLACK]}.first(counts[BLACK])};
 }
 
-void affine_tranform(const std::span<const uint8_t, 2 * L2> input, const std::span<const int8_t[L3], 2 * L2> weights, const std::span<const int32_t, L3> biases, const std::span<int32_t, L3> output) noexcept {
-    // column major
-    const auto input32 = span_cast<const int32_t>(input); // 8
-    __m512i acc0 = _mm512_load_si512(biases.first<16>().data());
-    __m512i acc1 = _mm512_load_si512(biases.last<16>().data());
-    for (auto i = 0ul; i < input32.size(); ++i) {
-        const __m512i in = _mm512_set1_epi32(input32[i]);
-        acc0 = _mm512_dpbusd_epi32(acc0, in, _mm512_load_si512(weights[i * 4 + 0]));
-        acc1 = _mm512_dpbusd_epi32(acc1, in, _mm512_load_si512(weights[i * 4 + 2]));
-    }
-    _mm512_store_si512(output.first<16>().data(), acc0);
-    _mm512_store_si512(output.last<16>().data(), acc1);
-}
-
-void affine_tranform(const std::span<const uint8_t, L3> input, const std::span<const int8_t[L3], 1> weights, const std::span<const int32_t, 1> biases, const std::span<int32_t, 1> output) noexcept {
-    // row major
-    const __m256i in = _mm256_load_si256(reinterpret_cast<const __m256i*>(input.data()));
-    const __m256i row = _mm256_load_si256(reinterpret_cast<const __m256i*>(weights.data()));
-    const __m256i sum = _mm256_madd_epi16(_mm256_maddubs_epi16(in, row), _mm256_set1_epi16(1));
-    output[0] = biases[0] + __builtin_reduce_add((__v8si) sum);
-}
-
-std::unique_ptr<nnue_t> load() {
-    return std::unique_ptr<nnue_t>(new nnue_t("../nnue.bin"));
+std::unique_ptr<nnue_t> load(const std::string_view filename) {
+    return std::unique_ptr<nnue_t>(new nnue_t(filename));
 }
 
 nnue_t::nnue_t(const std::string_view filename) {
     std::ifstream stream{std::string{filename}, std::ios::binary};
     if (!stream)
         throw std::runtime_error{"unable to open NNUE network: " + std::string{filename}};
-
-    stream.read(reinterpret_cast<char*>(&feature_layer.biases0), sizeof(feature_layer.biases0));
-    stream.read(reinterpret_cast<char*>(&feature_layer.weights0), sizeof(feature_layer.weights0));
-    stream.read(reinterpret_cast<char*>(&feature_layer.psqrt_weights0), sizeof(feature_layer.psqrt_weights0));
-
-    for (size_t i = 0; i < SLOTS; ++i) {
-        stream.read(reinterpret_cast<char*>(&hidden_layers[i].biases1), sizeof(hidden_layers[i].biases1));
-        stream.read(reinterpret_cast<char*>(&hidden_layers[i].weights1), sizeof(hidden_layers[i].weights1));
-
-        stream.read(reinterpret_cast<char*>(&hidden_layers[i].biases2), sizeof(hidden_layers[i].biases2));
-        stream.read(reinterpret_cast<char*>(&hidden_layers[i].weights2), sizeof(hidden_layers[i].weights2));
-
-        stream.read(reinterpret_cast<char*>(&hidden_layers[i].biases3), sizeof(hidden_layers[i].biases3));
-        stream.read(reinterpret_cast<char*>(&hidden_layers[i].weights3), sizeof(hidden_layers[i].weights3));
+    if (read_integer<uint32_t>(stream) != 0x6A448AFA ||
+        read_integer<uint32_t>(stream) != 0xE5CD8C39)
+        throw std::runtime_error{"unsupported NNUE network format: " + std::string{filename}};
+    const auto description_size = read_integer<uint32_t>(stream);
+    if (description_size > 4096)
+        throw std::runtime_error{"invalid NNUE network description length"};
+    std::array<char, 4096> description;
+    read_bytes(stream, description.data(), description_size);
+    if (read_integer<uint32_t>(stream) != 0x86FEFD2F)
+        throw std::runtime_error{"unsupported NNUE feature transformer"};
+    read_bytes(stream, feature_layer.biases, sizeof(feature_layer.biases));
+    read_bytes(stream, feature_layer.weights, sizeof(feature_layer.weights));
+    for (auto& layer : hidden_layers) {
+        if (read_integer<uint32_t>(stream) != 0x63337116)
+            throw std::runtime_error{"unsupported NNUE layer stack"};
+        read_affine<L1>(stream, layer.biases1, layer.weights1);
+        read_affine<2 * L2>(stream, layer.biases2, layer.weights2);
+        layer.bias3 = read_integer<int32_t>(stream);
+        read_bytes(stream, layer.weights3, sizeof(layer.weights3));
     }
-
-    if (!stream || stream.fail() || stream.peek() != std::ios::traits_type::eof())
-        throw std::runtime_error{"failed to read NNUE network: " + std::string{filename}};
+    if (stream.peek() != std::ios::traits_type::eof())
+        throw std::runtime_error{"unexpected trailing data in NNUE network: " + std::string{filename}};
 }
 
 void nnue_t::initialize(entry_t& entry) const noexcept {
-    const auto accumulation = span_cast<__m512i>(std::span{entry.accumulation});
-    const auto biases = span_cast<const __m512i>(std::span{feature_layer.biases0});
-    std::ranges::copy(biases, accumulation.begin());
-    _mm256_store_epi32(entry.psqrt_accumulation, _mm256_setzero_si256());
+    std::ranges::copy(feature_layer.biases, entry.accumulation);
+    entry.feature_count = 0;
 }
 
-void nnue_t::update(entry_t& entry, const std::span<const uint16_t> removed_features, const std::span<const uint16_t> added_features) const noexcept {
-    constexpr size_t chunk = 16;
-    const auto accumulation = span_cast<__m512i>(std::span{entry.accumulation});
-    const auto weights = [this](const auto feature){ return span_cast<const __m512i>(std::span{feature_layer.weights0[feature]}); };
-    for (auto index = 0ul; index < accumulation.size(); index += chunk) {
-        __m512i regs[chunk];
-        std::ranges::copy(accumulation.subspan(index, chunk), regs);
-        for (auto feature : removed_features)
-            std::ranges::transform(regs, weights(feature).subspan(index, chunk), regs, _mm512_sub_epi16);
-        for (auto feature : added_features)
-            std::ranges::transform(regs, weights(feature).subspan(index, chunk), regs, _mm512_add_epi16);
-        std::ranges::copy(regs, accumulation.subspan(index, chunk).begin());
+void nnue_t::update(entry_t& entry, const std::span<const uint32_t> removed,
+                    const std::span<const uint32_t> added) const noexcept {
+    if (removed.empty() && added.empty())
+        return;
+    constexpr size_t registers = 16;
+    for (size_t base = 0; base < L1; base += registers * 32) {
+        __m512i accumulation[registers];
+        for (size_t i = 0; i < registers; ++i)
+            accumulation[i] = _mm512_load_si512(entry.accumulation + base + i * 32);
+        for (const auto feature : removed)
+            for (size_t i = 0; i < registers; ++i)
+                accumulation[i] = _mm512_sub_epi16(accumulation[i],
+                    _mm512_cvtepi8_epi16(_mm256_load_si256(
+                        reinterpret_cast<const __m256i*>(feature_layer.weights[feature] + base + i * 32))));
+        for (const auto feature : added)
+            for (size_t i = 0; i < registers; ++i)
+                accumulation[i] = _mm512_add_epi16(accumulation[i],
+                    _mm512_cvtepi8_epi16(_mm256_load_si256(
+                        reinterpret_cast<const __m256i*>(feature_layer.weights[feature] + base + i * 32))));
+        for (size_t i = 0; i < registers; ++i)
+            _mm512_store_si512(entry.accumulation + base + i * 32, accumulation[i]);
     }
-
-    const auto psqrt_weights = [this](const auto feature) { return _mm256_load_epi32(feature_layer.psqrt_weights0[feature]); };
-    __m256i psqrt_accumulation = _mm256_load_epi32(entry.psqrt_accumulation);
-    psqrt_accumulation = std::ranges::fold_left(removed_features | std::views::transform(psqrt_weights), psqrt_accumulation, _mm256_sub_epi32);
-    psqrt_accumulation = std::ranges::fold_left(added_features | std::views::transform(psqrt_weights), psqrt_accumulation, _mm256_add_epi32);
-    _mm256_store_epi32(entry.psqrt_accumulation, psqrt_accumulation);
 }
 
-int16_t nnue_t::evaluate(const entry_t& t, const entry_t& o, const size_t piece_count) const noexcept {
-    const auto bucket = (piece_count - 1) / 4;
+int16_t nnue_t::evaluate(const entry_t& us, const entry_t& them, const size_t piece_count,
+                        const bool our_queen, const bool their_queen) const noexcept {
+    const size_t bucket = (piece_count - 1) / 4 * 4 + 2 * our_queen + their_queen;
+    alignas(64) uint8_t transformed[L1];
+    const entry_t* perspectives[] = {&us, &them};
+    for (size_t p = 0; p < 2; ++p)
+        for (size_t i = 0; i < L1 / 2; ++i) {
+            const int first = std::clamp(int(perspectives[p]->accumulation[i]), 0, 255);
+            const int second = std::clamp(int(perspectives[p]->accumulation[i + L1 / 2]), 0, 255);
+            transformed[p * (L1 / 2) + i] = static_cast<uint8_t>(first * second / 512);
+        }
 
-    alignas(64) uint8_t l1clipped[L1];
-    alignas(64) int32_t l2transformed[L2];
-    alignas(64) uint8_t l2clipped[2 * L2];
-    alignas(64) int32_t l3transformed[L3];
-    alignas(64) uint8_t l3clipped[L3];
-    alignas(64) int32_t l4transformed[1];
-
-    mul_clipped_relu(std::span{t.accumulation}, std::span{l1clipped}.template first<L1 / 2>());
-    mul_clipped_relu(std::span{o.accumulation}, std::span{l1clipped}.template last<L1 / 2>());
-
-    const auto& hidden_layer = hidden_layers[bucket];
-
-    affine_tranform(std::span{l1clipped}, std::span{hidden_layer.weights1}, std::span{hidden_layer.biases1}, std::span{l2transformed});
-    sqr_clipped_relu(std::span{l2transformed} | std::views::as_const, std::span{l2clipped}.template first<L2>());
-    clipped_relu(std::span{l2transformed} | std::views::as_const, std::span{l2clipped}.template last<L2>());
-
-    // ugly shit
-    std::ranges::copy(std::span{l2clipped}.template subspan<L2, L2 - 1>(), l2clipped + L2 - 1);
-    l2clipped[2 * L2 - 2] = 0;
-    l2clipped[2 * L2 - 1] = 0;
-    //
-
-    affine_tranform(std::span{l2clipped} | std::views::as_const, std::span{hidden_layer.weights2}, std::span{hidden_layer.biases2}, std::span{l3transformed});
-    clipped_relu(std::span{l3transformed} | std::views::as_const, std::span{l3clipped});
-    affine_tranform(std::span{l3clipped} | std::views::as_const, std::span{hidden_layer.weights3}, std::span{hidden_layer.biases3}, std::span{l4transformed});
-
-    const auto positional = l4transformed[0] + l2transformed[L2 - 1] * (600 * 16) / (127 * (1 << 6));
-    const auto psqt = (t.psqrt_accumulation[bucket] - o.psqrt_accumulation[bucket]) / 2;
-
-    return (positional + psqt) / 32;
+    const auto& layer = hidden_layers[bucket];
+    alignas(64) int32_t first[32];
+    alignas(64) int32_t second[32];
+    alignas(64) uint8_t first_activations[64];
+    alignas(64) uint8_t second_activations[128];
+    affine(transformed, layer.weights1, layer.biases1, first);
+    activate(first, first_activations, 7);
+    affine(first_activations, layer.weights2, layer.biases2, second);
+    std::ranges::copy(first_activations, second_activations);
+    activate(second, second_activations + 64, 6);
+    auto sum = _mm512_setzero_si512();
+    for (size_t i = 0; i < 128; i += 64)
+        sum = _mm512_dpbusd_epi32(sum, _mm512_load_si512(second_activations + i),
+                                 _mm512_load_si512(layer.weights3 + i));
+    const int64_t output = int64_t(layer.bias3) + _mm512_reduce_add_epi32(sum) +
+        int64_t(first[30]) - first[31];
+    return static_cast<int16_t>((output * 9600 / 16384) / 16);
 }
 
 }
