@@ -105,14 +105,31 @@ void affine(const uint8_t (&input)[Inputs], const int8_t (&weights)[Inputs / 4][
             const int32_t (&biases)[32], int32_t (&output)[32]) noexcept {
     auto low = _mm512_load_si512(biases);
     auto high = _mm512_load_si512(biases + 16);
-    for (size_t i = 0; i < Inputs / 4; ++i) {
-        uint32_t word;
-        std::memcpy(&word, input + 4 * i, sizeof(word));
-        if (word == 0)
-            continue;
+    const auto accumulate = [&](const size_t i, const uint32_t word) {
         const auto value = _mm512_set1_epi32(std::bit_cast<int32_t>(word));
         low = _mm512_dpbusd_epi32(low, value, _mm512_load_si512(weights[i][0]));
         high = _mm512_dpbusd_epi32(high, value, _mm512_load_si512(weights[i][16]));
+    };
+    if constexpr (Inputs == L1) {
+        // Each mask bit selects one nonzero four-byte VNNI input group.
+        for (size_t base = 0; base < Inputs / 4; base += 16) {
+            uint32_t nonzero = _mm512_cmpneq_epi32_mask(
+                _mm512_load_si512(input + 4 * base), _mm512_setzero_si512());
+            while (nonzero) {
+                const size_t i = base + std::countr_zero(nonzero);
+                nonzero &= nonzero - 1;
+                uint32_t word;
+                std::memcpy(&word, input + 4 * i, sizeof(word));
+                accumulate(i, word);
+            }
+        }
+    } else {
+        for (size_t i = 0; i < Inputs / 4; ++i) {
+            uint32_t word;
+            std::memcpy(&word, input + 4 * i, sizeof(word));
+            if (word != 0)
+                accumulate(i, word);
+        }
     }
     _mm512_store_si512(output, low);
     _mm512_store_si512(output + 16, high);

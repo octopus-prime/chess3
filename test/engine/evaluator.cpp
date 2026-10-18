@@ -1,6 +1,7 @@
 #include <algorithm>
 #include <array>
 #include <memory>
+#include <random>
 #include <string>
 #include "../nnue/reference_positions.hpp"
 #include "test_support.hpp"
@@ -10,12 +11,69 @@ import core.position;
 import core.move;
 import types.square;
 import types.score;
+import nnue.nnue;
 
 using namespace chess;
 
 size_t test_allocation_count() noexcept;
 
 namespace {
+
+bool test_random_cache_transitions() {
+    const auto network = nnue::load();
+    evaluator_t evaluator;
+    std::mt19937 random{20261018};
+    std::array<nnue::feature_buffer_t, 2> buffers;
+    nnue::entry_t entries[2];
+    const auto matches_full_refresh = [&](const position_t& position) {
+        const auto features = nnue::active_features(position, buffers);
+        for (const side_t side : {WHITE, BLACK}) {
+            network->initialize(entries[side]);
+            network->update(entries[side], {}, features[side]);
+        }
+        const auto side = position.side();
+        const auto expected = network->evaluate(
+            entries[side], entries[~side], position.by().size(),
+            !position.by(side, Q).empty(), !position.by(~side, Q).empty());
+        return test_support::check(evaluator.evaluate(position) == expected,
+                                   "random-walk cached evaluation matches a full accumulator rebuild");
+    };
+
+    for (const auto& test : nnue_reference::cases) {
+        position_t position{test.fen};
+        std::array<move_t, 48> moves;
+        size_t count = 0;
+        if (!matches_full_refresh(position))
+            return false;
+        for (; count < moves.size(); ++count) {
+            std::array<move_t, 256> buffer;
+            const auto legal = position.generate_all_moves(buffer);
+            if (legal.empty())
+                break;
+            moves[count] = legal[random() % legal.size()];
+            position.do_move(moves[count]);
+            if (!matches_full_refresh(position))
+                return false;
+            if (!position.check()) {
+                position.do_null_move();
+                if (!matches_full_refresh(position))
+                    return false;
+                position.undo_null_move();
+                if (!matches_full_refresh(position))
+                    return false;
+            }
+        }
+        while (count) {
+            position.undo_move(moves[--count]);
+            if (!matches_full_refresh(position))
+                return false;
+        }
+        if (!test_support::check(evaluator.evaluate(position) == test.score,
+                                 "undoing the random walk restores the exact Stockfish reference score"))
+            return false;
+    }
+    return true;
+}
 
 bool test_allocation_free_evaluation() {
     constexpr size_t king_positions = 64;
@@ -167,5 +225,6 @@ bool run_evaluator_tests() {
     passed &= test_support::check(evaluator.evaluate(position) == before_null,
                                   "null-move undo preserves the cached evaluation");
     passed &= test_allocation_free_evaluation();
+    passed &= test_random_cache_transitions();
     return passed;
 }

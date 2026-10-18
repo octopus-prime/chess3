@@ -324,7 +324,10 @@ build independent test targets in parallel.
   node budgets, reference best moves, legal PVs, deadline handling and root restoration.
 - `chess.evaluator`: Stockfish reference scores through the accumulator cache,
   repeated refreshes, king moves, castling, en passant, queen captures,
-  promotions/underpromotions, move undo, and null-move round trips.
+  promotions/underpromotions, move undo, and null-move round trips. Deterministic
+  random walks from every reference fixture compare cached evaluation against a
+  full accumulator rebuild after moves, null moves, and undo, then verify the
+  original Stockfish score is restored. Allocation checks cover cold cache entries.
 - `chess.mates`: mate-in-3/5/6 regressions with exact mate scores. The selective
   search uses depths 5/9/15 respectively; the mate-in-6 distance remains 11 plies,
   independent of its larger search-depth budget. The mate-in-8 case remains disabled.
@@ -390,7 +393,9 @@ After pairwise clipped activation, the dense network is
 connections, and 32 stacks selected by piece count and both sides' queen presence.
 Evaluation matches Stockfish's raw `Network::evaluate()` integer result, including
 its output scaling; Stockfish's additional evaluation/search adjustments are not
-applied. AVX-512 VNNI is used for dense inference.
+applied. AVX-512 VNNI is used for dense inference. The first affine layer detects
+nonzero four-byte input groups with SIMD masks and visits only those groups;
+zero groups contribute nothing and require no weight loads.
 
 The checked-in reference fixtures in [reference_positions.hpp](test/nnue/reference_positions.hpp)
 were generated from the adjacent Stockfish implementation and this exact network.
