@@ -178,6 +178,32 @@ bool test_move_ordering(const bool with_continuation = false) {
     return passed;
 }
 
+constexpr bool test_combined_history_score() {
+    using namespace chess;
+    history_t history;
+    history_t continuation;
+    history.update(WN, f3, 4096);
+    continuation.update(WN, f3, 4096);
+    if (history.score(WN, f3, nullptr) != 4096 ||
+        history.score(WN, f3, &continuation) != 8192 ||
+        history.score(WN, f3, &continuation) / 8192 != 1)
+        return false;
+    history.update(WN, f3, -history_t::LIMIT);
+    continuation.update(WN, f3, -history_t::LIMIT);
+    if (history.score(WN, f3, &continuation) != -2 * history_t::LIMIT ||
+        history.score(WN, f3, &continuation) / 8192 != -4)
+        return false;
+    history.update(WN, f3, history_t::LIMIT);
+    if (history.score(WN, f3, &continuation) != 0)
+        return false;
+    continuation.update(WN, f3, history_t::LIMIT);
+    return history.score(WN, f3, &continuation) == 2 * history_t::LIMIT &&
+        history.score(WN, f3, &continuation) / 8192 == 4 &&
+        history.score(BN, f3, &continuation) == 0;
+}
+
+static_assert(test_combined_history_score());
+
 bool test_continuation_history() {
     using namespace chess;
     continuation_history_t continuation;
@@ -474,6 +500,8 @@ bool run_engine_tests() {
     passed &= test_move_ordering();
     passed &= test_move_ordering(true);
     passed &= test_continuation_history();
+    passed &= test_support::check(test_combined_history_score(),
+                                  "combined history drives signed LMR adjustments without overflow");
     passed &= test_history_search_reset();
     passed &= test_support::check(test_history_updates(), "piece-to history gravity updates");
     passed &= test_support::check(test_killer_heights(), "killers support the maximum ply height");

@@ -234,7 +234,8 @@ piece and destination. Quiet cutoffs apply the same gravity bonus and searched-q
 penalties to this contextual table. The previous move may be tactical; a promoted
 piece uses its promoted type, and castling uses the king's destination. Positions
 without a previous move, including immediately after a null move, use ordinary
-history alone. Continuation scores do not change the LMR formula or tactical phases.
+history alone. Quiet ordering and LMR use the same sum of ordinary and continuation
+history. Tactical phases are unchanged.
 The fixed-size table uses about 1.5 MiB, allocated once when constructing the engine;
 searching and clearing it perform no allocations. `clear()` resets both histories,
 including the existing UCI clearing after each search.
@@ -262,7 +263,8 @@ searched that deeply; quiet sacrifices and zugzwang remain potential weaknesses.
   and the second at Non-PV nodes. Quiet non-killer moves are reduced only outside
   check, without giving check, and without an advanced pawn push or decisive alpha.
   The reduction is `int(0.75 + log(depth) * log(move_count) / 2.25)`, plus one
-  at Non-PV nodes, minus `history / 8192`, clamped to `[1, depth - 2]`.
+  at Non-PV nodes, minus `(history + continuation history) / 8192`, clamped to
+  `[1, depth - 2]`. Without a previous move, the continuation term is zero.
   An alpha improvement triggers a full-depth null-window re-search, followed by
   a full-window PV search when necessary.
 - Quiescence outside check filters negative-SEE captures and captures whose

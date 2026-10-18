@@ -54,8 +54,7 @@ auto ordered_moves(const position_t& position, const std::span<move_t> moves, co
                 count += result.size();
                 std::ranges::sort(result, std::greater<>(), [&](const move_t move) {
                     const auto piece = position.at(move.from());
-                    return history.get(piece, move.to()) +
-                        (continuation ? continuation->get(piece, move.to()) : 0);
+                    return history.score(piece, move.to(), continuation);
                 });
                 return result;
             }

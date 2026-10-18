@@ -20,6 +20,7 @@ struct history_t final {
     static constexpr int LIMIT = 16384;
 
     constexpr int get(const piece_t piece, const square_t to) const noexcept;
+    constexpr int score(piece_t piece, square_t to, const history_t* continuation) const noexcept;
     constexpr void update(const piece_t piece, const square_t to, int bonus) noexcept;
     constexpr void clear() noexcept;
     static constexpr int bonus(const ply_t depth) noexcept;
@@ -45,6 +46,11 @@ namespace chess {
 
 constexpr int history_t::get(const piece_t piece, const square_t to) const noexcept {
     return _entries[piece][to];
+}
+
+constexpr int history_t::score(const piece_t piece, const square_t to,
+                               const history_t* continuation) const noexcept {
+    return get(piece, to) + (continuation ? continuation->get(piece, to) : 0);
 }
 
 constexpr void history_t::update(const piece_t piece, const square_t to, int bonus) noexcept {

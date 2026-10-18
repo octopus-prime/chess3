@@ -241,7 +241,7 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
     size_t quiets_searched = 0;
     for (const move_t& move : ordered) {
         const bool is_tactical = _position.tactical(move);
-        const int history_score = _history.get(_position.at(move.from()), move.to());
+        const int history_score = _history.score(_position.at(move.from()), move.to(), continuation);
         const bool advanced_pawn = _position.at(move.from()).type() == P &&
             (_position.side() == WHITE ? move.to().rank() >= _6 : move.to().rank() <= _3);
         if (!is_tactical)
