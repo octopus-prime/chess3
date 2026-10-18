@@ -354,16 +354,18 @@ Set `BUILD_TESTING=OFF` to omit all four test executables.
 
 ## NNUE network
 
-The included `nnue.bin.xz` contains the unmodified Stockfish network
+The evaluator uses the unmodified Stockfish network
 [`nn-c9e480e92425.nnue`](https://github.com/official-stockfish/networks/blob/master/nn-c9e480e92425.nnue),
-matching Stockfish revision `effdc3fd`. Its decompressed SHA-256 is
+matching Stockfish revision `effdc3fd`. Its SHA-256 is
 `c9e480e92425f887df6ab9b05c6180fbd762b07879df9d9845f1aa75440caa73`.
 The implementation follows Stockfish's GPLv3 NNUE architecture while retaining
 this project's independent, refresh-based design.
 
-Before running `chess3` or Engine/NNUE tests, decompress the network to `nnue.bin`
-in the repository root, replacing any older `nnue.bin`. The loader opens
-`../nnue.bin`, so run these executables from `build/`; CTest uses that directory.
+Before running `chess3` or Engine/NNUE tests, download
+[`nn-c9e480e92425.nnue`](https://raw.githubusercontent.com/official-stockfish/networks/master/nn-c9e480e92425.nnue)
+and place it in the repository root, keeping its original filename.
+No extraction, renaming, or conversion is needed. The loader opens
+`../nn-c9e480e92425.nnue`, so run these executables from `build/`; CTest uses that directory.
 It reads the standard little-endian `.nnue` format directly and checks version,
 architecture/section hashes, truncation, and trailing data. The previous custom
 network format is no longer supported; no network conversion is needed.
@@ -402,16 +404,7 @@ zero groups contribute nothing and require no weight loads.
 
 The checked-in reference fixtures in [reference_positions.hpp](test/nnue/reference_positions.hpp)
 were generated from the adjacent Stockfish implementation and this exact network.
-Tests require only the included network, not a Stockfish checkout or executable.
-
-### How to extract
-
-- **Windows (with 7-Zip):**
-  Right-click `nnue.bin.xz` $\rightarrow$ **7-Zip** $\rightarrow$ **Extract Here**.
-- **Linux / macOS:**
-  ```sh
-  xz -dkf nnue.bin.xz
-  ```
+Tests require only the downloaded network, not a Stockfish checkout or executable.
 
 ## Build and run
 
@@ -439,7 +432,7 @@ a Release build, then build the desired targets through CMake Tools.
 CMake manages module compilation order and compiled module artifacts; no manual
 module flags or header units are needed.
 
-After extracting the network, run the applications from the build directory:
+After downloading the network, run the applications from the build directory:
 
 ```sh
 cd build
