@@ -380,6 +380,9 @@ The evaluator keeps its per-color, per-king-square accumulator cache. Features
 for both perspectives are enumerated together, sharing attack and pawn-pair
 generation. Each `refresh()` uses a fixed-size membership table to subtract
 cached features that disappeared and add new features, without sorting.
+Cached features are marked once and cleared as current features are visited;
+remaining marks identify removals, with branchless delta collection. Pawn-pair
+enumeration uses adjacent-file bitboard masks rather than testing every pair.
 Feature and delta buffers have a conservative legal-position bound of 1,144
 indices (32 PSQs, at most 32 * 31 directed threats, and 120 pawn pairs).
 Evaluation performs no heap allocations, including the first visit to any king

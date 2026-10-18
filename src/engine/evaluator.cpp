@@ -41,21 +41,19 @@ const nnue::entry_t& evaluator_t::refresh(const position_t& position, const side
     size_t removed_count = 0;
     size_t added_count = 0;
     const auto previous = std::span{entry.features}.first(entry.feature_count);
-    // 1 marks a cached feature; 2 marks a feature present in the new position.
+    // Mark cached features, then clear those still present in the new position.
     for (const auto feature : previous)
         _membership[feature] = 1;
     for (const auto feature : features) {
-        if (!_membership[feature])
-            _added[added_count++] = feature;
-        _membership[feature] = 2;
+        _added[added_count] = feature;
+        added_count += !_membership[feature];
+        _membership[feature] = 0;
     }
     for (const auto feature : previous) {
-        if (_membership[feature] == 1)
-            _removed[removed_count++] = feature;
+        _removed[removed_count] = feature;
+        removed_count += _membership[feature];
         _membership[feature] = 0;
     }
-    for (const auto feature : features)
-        _membership[feature] = 0;
     _nnue->update(entry, std::span{_removed}.first(removed_count),
                   std::span{_added}.first(added_count));
     std::ranges::copy(features, entry.features.begin());

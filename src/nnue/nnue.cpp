@@ -75,6 +75,11 @@ struct threat_table_t {
 
 const threat_table_t threat_table;
 
+constexpr squares_t pawn_pair_files[] = {
+    {a, b}, {a, b, c}, {b, c, d}, {c, d, e},
+    {d, e, f}, {e, f, g}, {f, g, h}, {g, h}
+};
+
 void read_bytes(std::istream& stream, void* destination, const size_t size) {
     if (!stream.read(static_cast<char*>(destination), static_cast<std::streamsize>(size)))
         throw std::runtime_error{"truncated NNUE network"};
@@ -212,11 +217,10 @@ std::array<std::span<uint32_t>, 2> active_features(
     auto pawns = position.by(P);
     for (const square_t from : position.by(P)) {
         pawns.reset(from);
-        for (const square_t to : pawns)
-            if (std::abs(int(from.file()) - int(to.file())) <= 1)
-                for (const side_t side : {WHITE, BLACK})
-                    buffers[side][counts[side]++] = pair_index(
-                        kings[side], from, to, position.at(from).side(), position.at(to).side(), side);
+        for (const square_t to : pawns & pawn_pair_files[from.file()])
+            for (const side_t side : {WHITE, BLACK})
+                buffers[side][counts[side]++] = pair_index(
+                    kings[side], from, to, position.at(from).side(), position.at(to).side(), side);
     }
     return {std::span{buffers[WHITE]}.first(counts[WHITE]),
             std::span{buffers[BLACK]}.first(counts[BLACK])};
