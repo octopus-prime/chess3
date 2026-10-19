@@ -59,7 +59,8 @@ target_sources(chess_nnue
 )
 
 add_library(chess_engine STATIC)
-target_link_libraries(chess_engine PUBLIC chess_core chess_nnue)
+find_package(Threads REQUIRED)
+target_link_libraries(chess_engine PUBLIC chess_core chess_nnue Threads::Threads)
 add_dependencies(chess_engine chess_nnue)
 target_sources(chess_engine
     PUBLIC FILE_SET CXX_MODULES FILES ${engine_modules}
@@ -113,4 +114,11 @@ if(BUILD_TESTING)
     add_test(NAME chess.engine.all COMMAND chess_engine_tests)
     set_tests_properties(chess.types PROPERTIES LABELS types)
     set_tests_properties(chess.engine.all PROPERTIES LABELS engine)
+    find_package(Python3 COMPONENTS Interpreter)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME chess.uci.protocol
+            COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test/engine/uci_protocol.py"
+                    $<TARGET_FILE:chess3>)
+        set_tests_properties(chess.uci.protocol PROPERTIES LABELS engine TIMEOUT 30)
+    endif()
 endif()

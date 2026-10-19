@@ -205,6 +205,16 @@ losing scores do the reverse. This preserves mate distance when the same positio
 is reached at different search heights. Exact scores and both bound types use
 the same conversion; ordinary evaluations and ignore sentinels are unchanged.
 
+The TT also owns a separate direct-mapped static-evaluation cache with 65,536
+entries (about 1 MiB). Each entry verifies the complete 64-bit position hash and
+stores only the raw side-to-move NNUE score, never a search bound or mate-distance
+adjustment. Main search and quiescence share it through `engine_t::evaluate()`.
+The evaluator currently depends only on hashed board state, not the halfmove
+clock or repetition history; any future rule-50 scaling must be applied after
+the cached raw evaluation. A miss runs the normal accumulator-based evaluator.
+The cache is allocated once with the TT and cleared with it, including after
+each UCI search. The six-entry TT buckets and replacement strategy are unchanged.
+
 Main-search move ordering uses five lazy spans flattened with C++23 `views::join`:
 the legal TT move, tactical moves with nonnegative SEE sorted descending,
 both killers in priority order, quiet moves sorted by history, and remaining
@@ -227,6 +237,18 @@ Updates use history gravity (`value += bonus - value * abs(bonus) / 16384`) with
 the bonus clamped to `[-16384, 16384]` and arithmetic in `int`. Captures and
 promotions do not update history. Each `engine_t` owns its table and retains it
 across iterative-deepening calls; constructing a new search starts with zero history.
+
+Quiet ordering also adds a one-ply continuation-history score, indexed by the
+previous move's colored piece on its destination and the current move's colored
+piece and destination. Quiet cutoffs apply the same gravity bonus and searched-quiet
+penalties to this contextual table. The previous move may be tactical; a promoted
+piece uses its promoted type, and castling uses the king's destination. Positions
+without a previous move, including immediately after a null move, use ordinary
+history alone. Quiet ordering and LMR use the same sum of ordinary and continuation
+history. Tactical phases are unchanged.
+The fixed-size table uses about 1.5 MiB, allocated once when constructing the engine;
+searching and clearing it perform no allocations. `clear()` resets both histories,
+including the existing UCI clearing after each search.
 
 ## Selective search
 
@@ -251,13 +273,17 @@ searched that deeply; quiet sacrifices and zugzwang remain potential weaknesses.
   and the second at Non-PV nodes. Quiet non-killer moves are reduced only outside
   check, without giving check, and without an advanced pawn push or decisive alpha.
   The reduction is `int(0.75 + log(depth) * log(move_count) / 2.25)`, plus one
-  at Non-PV nodes, minus `history / 8192`, clamped to `[1, depth - 2]`.
+  at Non-PV nodes, minus `(history + continuation history) / 8192`, clamped to
+  `[1, depth - 2]`. Without a previous move, the continuation term is zero.
   An alpha improvement triggers a full-depth null-window re-search, followed by
   a full-window PV search when necessary.
 - Quiescence outside check filters negative-SEE captures and captures whose
   material gain plus a 150-centipawn margin cannot reach alpha. Promotions and
-  checking moves are exempt. Sorting uses inexpensive victim/attacker values
-  rather than repeatedly running SEE. In check, every legal evasion is retained.
+  checking moves are exempt. Sorting uses `position_t::mvv_lva(move)` rather
+  than repeatedly running SEE: `16 * victim + promotion - attacker`, using
+  material values and counting the captured pawn for en passant. This shared
+  ordering score is not a static evaluation or an exchange-safety test.
+  In check, every legal evasion is retained.
 - Mate-distance bounds constrain non-root nodes. TT bounds cause direct cutoffs
   only at Non-PV nodes rather than narrowing a PV window. Aspiration starts at
   depth five for non-mate scores and repeatedly widens failed bounds until the
@@ -334,6 +360,9 @@ build independent test targets in parallel.
 - `chess.uci`: in-process command/response checks for identification, readiness,
   new games, unknown commands, EOF and quit. Responses use `std::cout`, captured
   by the tests with a standard C++ string stream.
+- `chess.uci.protocol`: when Python 3 is available, subprocess tests for readiness
+  during search, stop/restart, node/time/depth limits, invalid input, options,
+  terminal positions, quit, and EOF during search.
 - `chess.engine.all`: all Engine suites, including the longer mate regressions.
 
 CTest is available through VS Code's CMake Tools test integration. To run a suite
@@ -441,10 +470,97 @@ cd build
 ```
 
 `perft` prints perft timings for depths one through six over the benchmark FENs.
-`chess3` prints iterative-deepening search scores, cumulative nodes/timings, and
-principal variations for depths one through twelve over the same FENs.
-Tests do not run during application startup or benchmark timing. Engine already
-uses NNUE evaluation; UCI is not implemented.
+`chess3` runs a UCI command loop and uses NNUE evaluation. Tests do not run during
+application startup.
+
+## UCI and match testing
+
+Search runs on one worker thread, leaving the command loop responsive to
+`isready`, `stop`, and `quit`. A position change or new search stops and joins the
+previous search before changing engine state. EOF also stops search. The last
+completed iteration supplies the best move; if none completed, a legal move is
+returned. Positions without legal moves return `bestmove 0000`.
+
+Supported search limits (in any argument order) are `depth`, `nodes`, `movetime`,
+`wtime`, `btime`, `winc`, `binc`, `movestogo`, and `infinite`. `go infinite` waits
+for `stop` even if the maximum search depth is reached. Unsupported limits,
+malformed numbers, malformed positions, and illegal move lists produce
+`info string` diagnostics. Pondering, `searchmoves`, configurable Hash/Threads,
+and Chess960 are not implemented; this engine uses one search thread and a fixed
+16 MiB transposition table.
+
+`Move Overhead` is a UCI spin option (default 20 ms, range 0–5000 ms). Fixed
+movetime subtracts this reserve once. Clock searches reserve `Move Overhead`
+for **each** of the `movestogo` moves (default 25), not just the current move.
+For example, `40/1` with 20 ms overhead reserves 800 ms for communication and
+scheduling across the period, initially leaving a 5 ms soft search budget.
+If the reserve consumes the remaining clock, the engine returns a legal fallback.
+Clock searches use a soft budget of remaining
+usable time divided by `movestogo` (default 25), plus 75% of the increment, capped
+by usable time. The hard budget is at most three times the soft budget and never
+exceeds usable time. Soft limits stop between iterations; hard limits are polled
+every 128 nodes. Stop requests and node limits are checked at every node.
+Deadlines start when the UCI command loop receives `go`, before joining the
+previous worker or starting the next one. An already expired search returns a
+legal fallback without running NNUE or initial quiescence. An interrupted initial
+quiescence uses a neutral fallback score rather than evaluating after the deadline.
+Scheduling delays can still cause deadline overshoot, so retain a safety reserve.
+TT/history clearing after each UCI search is intentionally unchanged for now;
+`ucinewgame` resets the engine too.
+
+For interactive testing, enter each command after the previous response:
+
+```text
+uci
+isready
+position startpos
+go movetime 1000
+```
+
+Wait for `bestmove`, or send `stop`; sending `quit` immediately after `go`
+interrupts the search rather than waiting for the requested depth.
+
+### Automated fastchess matches
+
+Requires Python 3.11+ and `fastchess` on PATH (tested with alpha 1.8.2). Preserve
+the match-ready baseline binary **before** making a candidate change:
+
+```sh
+mkdir -p matches
+cp build/chess3 matches/baseline
+# Make one candidate change, build, and run tests.
+python3 scripts/match.py --baseline matches/baseline --candidate build/chess3 \
+  --rounds 4 --tc 2+0.02 --output matches/smoke
+```
+
+The bundled six-position EPD suite is only a protocol smoke test, not a strength
+test. For measurements, supply a large, suitably varied EPD or PGN opening suite:
+
+```sh
+python3 scripts/match.py --baseline matches/baseline --candidate build/chess3 \
+  --openings /path/to/openings.epd --rounds 1000 --tc 10+0.1 \
+  --concurrency 1 --output matches/experiment
+```
+
+Each round plays the same opening with colors reversed; the seed defaults to
+20261018. Both engines receive identical time controls and run with `build/` as
+their working directory so the network is found. `--engine-dir` overrides that
+directory. The runner snapshots both binaries and the opening suite, records
+their SHA-256 hashes, network hash, source revision/worktree status, fastchess
+version and exact command, and saves PGNs, console logs, and fastchess resume
+state in the output directory. Incomplete matches, abnormal PGN terminations
+(including time forfeits), and fastchess PV/protocol warnings make the runner
+return a failure status. Output directories must be new and are ignored
+by Git. Keep the working network unchanged throughout a match.
+
+Optional `--sprt` enables normalized-Elo bounds [0, 5] with alpha/beta 0.05.
+Choose a sufficiently large round cap; reaching that cap without crossing an
+SPRT boundary is inconclusive. Positive results require sufficient games and
+uncertainty reporting, not just a favorable small sample. Check PGNs/logs for
+crashes, illegal moves, and time forfeits before interpreting Elo. No
+evaluation-score-based resignation or draw adjudication is enabled.
+Fastchess lists baseline first in the summary, so its displayed Elo is baseline
+relative to candidate; inspect the player names when interpreting the sign.
 
 `core.perft` and `engine.engine` expose class declarations in their `.cppm`
 interfaces; runtime method definitions live in matching `.cpp` implementation

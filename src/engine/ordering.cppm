@@ -15,8 +15,8 @@ import engine.history;
 
 export namespace chess {
 
-auto ordered_moves(const position_t& position, const std::span<move_t> moves, const move_t best_move, const std::span<const move_t, 2> killer_moves, const history_t& history) noexcept {
-    const auto create = [&position, moves, best_move, killer_moves, &history, count = size_t{}](const int phase) mutable -> std::span<move_t> {
+auto ordered_moves(const position_t& position, const std::span<move_t> moves, const move_t best_move, const std::span<const move_t, 2> killer_moves, const history_t& history, const history_t* continuation = nullptr) noexcept {
+    const auto create = [&position, moves, best_move, killer_moves, &history, continuation, count = size_t{}](const int phase) mutable -> std::span<move_t> {
         const auto remaining = moves.subspan(count, moves.size() - count);
         switch (phase) {
             case 0: {
@@ -52,7 +52,10 @@ auto ordered_moves(const position_t& position, const std::span<move_t> moves, co
                 const auto tail = std::ranges::partition(remaining, [&](const move_t move) { return !position.tactical(move); });
                 const auto result = remaining.first(tail.begin() - remaining.begin());
                 count += result.size();
-                std::ranges::sort(result, std::greater<>(), [&](const move_t move) { return history.get(position.at(move.from()), move.to()); });
+                std::ranges::sort(result, std::greater<>(), [&](const move_t move) {
+                    const auto piece = position.at(move.from());
+                    return history.score(piece, move.to(), continuation);
+                });
                 return result;
             }
             default: {

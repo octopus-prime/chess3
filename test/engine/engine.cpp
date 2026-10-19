@@ -5,6 +5,7 @@
 #include <limits>
 #include <type_traits>
 #include <algorithm>
+#include <stop_token>
 #include <ranges>
 #include <span>
 #include "test_support.hpp"
@@ -19,6 +20,8 @@ import core.position;
 import types.piece;
 import types.hash;
 import types.ply;
+
+size_t test_allocation_count() noexcept;
 
 namespace {
 
@@ -85,7 +88,53 @@ bool test_tt_mate_scores() {
     return passed;
 }
 
-bool test_move_ordering() {
+bool test_static_eval_cache() {
+    using namespace chess;
+    transposition_t table{0};
+    bool passed = test_support::check(!table.get_eval(0) && !table.get_eval(1),
+                                      "empty eval cache misses, including the zero key");
+    table.put_eval(0, DRAW);
+    table.put_eval(1, score_e(-123));
+    passed &= test_support::check(table.get_eval(0) == score_t{DRAW} &&
+                                  table.get_eval(1) == score_t{score_e(-123)},
+                                  "eval cache preserves zero and negative evaluations");
+    table.put_eval(65537, score_e(456));
+    passed &= test_support::check(!table.get_eval(1) &&
+                                  table.get_eval(65537) == score_t{score_e(456)} &&
+                                  table.get_eval(0) == score_t{DRAW},
+                                  "eval cache collisions compare full keys and replace only their slot");
+    const move_t move{e2, e4};
+    table.put(65537, move, score_e(MAX - 5), LOWER, 12, 2);
+    const auto bound = table.get(65537, 4);
+    passed &= test_support::check(
+        bound && bound->score == MAX - 7 &&
+            table.get_eval(65537) == score_t{score_e(456)} &&
+            !table.get(1, 0),
+        "cached evaluation stays separate from mate-normalized bounds and search entries");
+    table.put_eval(65537, score_e(-999));
+    const auto unchanged = table.get(65537, 4);
+    passed &= test_support::check(unchanged && unchanged->move == move &&
+                                  unchanged->depth == 12 && unchanged->flag == LOWER &&
+                                  unchanged->score == MAX - 7,
+                                  "eval writes do not change TT bounds, depths or moves");
+    table.clear();
+    passed &= test_support::check(!table.get_eval(0) && !table.get_eval(65537) &&
+                                  !table.get(65537, 0) && table.full() == 0,
+                                  "TT clear also invalidates cached evaluations");
+    const auto before = test_allocation_count();
+    bool correct = true;
+    for (hash_t hash = 0; hash < 65536; ++hash)
+        table.put_eval(hash, score_e(int(hash % 2001) - 1000));
+    for (hash_t hash = 0; hash < 65536; ++hash)
+        correct &= table.get_eval(hash) == score_t{score_e(int(hash % 2001) - 1000)};
+    table.clear();
+    const auto after = test_allocation_count();
+    passed &= test_support::check(correct && after == before,
+                                  "filling, probing and clearing the entire eval cache allocates nothing");
+    return passed;
+}
+
+bool test_move_ordering(const bool with_continuation = false) {
     using namespace chess;
     const position_t position{"4k3/P7/8/3pP3/8/8/8/4K1N1 w - d6 0 1"};
     std::array<move_t, 256> buffer;
@@ -106,14 +155,19 @@ bool test_move_ordering() {
                                       "ordering fixture includes quiet killer moves");
 
     history_t history;
+    history_t continuation;
     for (size_t i = 0; i < legal_moves.size(); ++i) {
         const move_t move = original[i];
         if (!position.tactical(move) && move != killers[0] && move != killers[1])
             history.update(position.at(move.from()), move.to(),
                            static_cast<int>((legal_moves.size() - i) * 32));
+        if (!position.tactical(move))
+            continuation.update(position.at(move.from()), move.to(),
+                                static_cast<int>(i * 64));
     }
 
-    auto ordered = ordered_moves(position, moves, best, killers, history);
+    auto ordered = ordered_moves(position, moves, best, killers, history,
+                                 with_continuation ? &continuation : nullptr);
     std::array<move_t, 256> actual;
     size_t count{};
     int previous_phase = -1;
@@ -149,10 +203,13 @@ bool test_move_ordering() {
         }
         if (phase == previous_phase && phase == 3) {
             const auto previous_score = history.get(position.at(previous_move.from()),
-                                                    previous_move.to());
-            const auto current_score = history.get(position.at(move.from()), move.to());
+                                                    previous_move.to()) +
+                (with_continuation ? continuation.get(position.at(previous_move.from()),
+                                                      previous_move.to()) : 0);
+            const auto current_score = history.get(position.at(move.from()), move.to()) +
+                (with_continuation ? continuation.get(position.at(move.from()), move.to()) : 0);
             passed &= test_support::check(previous_score >= current_score,
-                                          "quiet moves are sorted by history");
+                                          "quiet moves are sorted by combined history");
         }
         if (phase == previous_phase && phase == 4)
             passed &= test_support::check(position.see(previous_move) >= position.see(move),
@@ -166,6 +223,103 @@ bool test_move_ordering() {
     passed &= test_support::check(count == legal_moves.size(), "all legal moves are ordered");
     passed &= test_support::check(phase_counts[0] == 1 && phase_counts[2] == 2,
                                   "TT move and both killers appear in their phases");
+    return passed;
+}
+
+constexpr bool test_combined_history_score() {
+    using namespace chess;
+    history_t history;
+    history_t continuation;
+    history.update(WN, f3, 4096);
+    continuation.update(WN, f3, 4096);
+    if (history.score(WN, f3, nullptr) != 4096 ||
+        history.score(WN, f3, &continuation) != 8192 ||
+        history.score(WN, f3, &continuation) / 8192 != 1)
+        return false;
+    history.update(WN, f3, -history_t::LIMIT);
+    continuation.update(WN, f3, -history_t::LIMIT);
+    if (history.score(WN, f3, &continuation) != -2 * history_t::LIMIT ||
+        history.score(WN, f3, &continuation) / 8192 != -4)
+        return false;
+    history.update(WN, f3, history_t::LIMIT);
+    if (history.score(WN, f3, &continuation) != 0)
+        return false;
+    continuation.update(WN, f3, history_t::LIMIT);
+    return history.score(WN, f3, &continuation) == 2 * history_t::LIMIT &&
+        history.score(WN, f3, &continuation) / 8192 == 4 &&
+        history.score(BN, f3, &continuation) == 0;
+}
+
+static_assert(test_combined_history_score());
+
+bool test_continuation_history() {
+    using namespace chess;
+    continuation_history_t continuation;
+    auto& reply = continuation.get(BN, f6);
+    bool passed = test_support::check(reply.get(WN, f3) == 0,
+                                      "continuation history starts at zero");
+    reply.update(WN, f3, 100);
+    reply.update(WN, f3, 100);
+    reply.update(WN, f3, -100);
+    passed &= test_support::check(reply.get(WN, f3) == 99,
+                                  "continuation history uses history gravity");
+    passed &= test_support::check(
+        continuation.get(WN, f6).get(WN, f3) == 0 &&
+        continuation.get(BB, f6).get(WN, f3) == 0 &&
+        continuation.get(BN, e6).get(WN, f3) == 0 &&
+        reply.get(BN, f3) == 0 && reply.get(WB, f3) == 0 && reply.get(WN, e3) == 0,
+        "continuation history isolates both colored pieces and destinations");
+    reply.update(WN, f3, 1000000);
+    reply.update(WB, c4, -1000000);
+    passed &= test_support::check(reply.get(WN, f3) == history_t::LIMIT &&
+                                  reply.get(WB, c4) == -history_t::LIMIT,
+                                  "continuation rewards and penalties are bounded");
+    continuation.get(BK, h8).update(WK, a1, 2048);
+    continuation.clear();
+    bool cleared = true;
+    for (size_t previous_piece = 0; previous_piece < MAX_PIECE; ++previous_piece) {
+        for (size_t previous_to = 0; previous_to < MAX_SQUARE; ++previous_to) {
+            const auto& entry = continuation.get(piece_e(previous_piece), square_e(previous_to));
+            for (size_t piece = 0; piece <= BK; ++piece)
+                for (size_t to = 0; to < MAX_SQUARE; ++to)
+                    cleared &= entry.get(piece_e(piece), square_e(to)) == 0;
+        }
+    }
+    passed &= test_support::check(cleared, "clear resets every continuation context");
+    return passed;
+}
+
+bool test_history_search_reset() {
+    using namespace chess;
+    struct case_t {
+        std::string_view fen;
+        std::string_view moves;
+    };
+    constexpr std::array cases{
+        case_t{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", ""},
+        case_t{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+               "e2e4 d7d5 e4d5"},
+        case_t{"4k2r/8/8/8/8/8/8/R3K2R w KQk - 0 1", "e1g1"},
+        case_t{"4k3/P7/8/8/8/8/8/4K2R w - - 0 1", "a7a8n"},
+        case_t{"4k2r/8/8/3pP3/8/8/8/4K2R w - d6 0 1", "e5d6"}
+    };
+    bool passed = true;
+    for (const auto& test : cases) {
+        engine_t search{test.fen};
+        search.setup(test.fen, test.moves);
+        const auto score = test_search(search, 5);
+        const auto nodes = search.nodes();
+        std::array<move_t, MAX_PLY> first_buffer;
+        const auto first_pv = search.extract_pv(first_buffer, 5);
+        search.clear();
+        const auto repeated = test_search(search, 5);
+        std::array<move_t, MAX_PLY> second_buffer;
+        const auto second_pv = search.extract_pv(second_buffer, 5);
+        passed &= test_support::check(
+            !score.ignore() && repeated == score && search.nodes() == nodes &&
+                std::ranges::equal(first_pv, second_pv),
+            "clearing histories reproduces search after normal and special moves");
+    }
     return passed;
 }
 
@@ -339,8 +493,8 @@ bool test_search_timeout() {
     const score_t expected = evaluator.evaluate(position_t{fen});
     passed &= test_support::check(test_search(search, 0) == expected,
                                   "timeout restores the root position");
-    passed &= test_support::check(search(std::numeric_limits<ply_t>::max(), milliseconds{0}) == expected,
-                                  "zero-time search returns the root evaluation");
+    passed &= test_support::check(search(std::numeric_limits<ply_t>::max(), milliseconds{0}) == DRAW,
+                                  "zero-time search returns a neutral score without evaluation");
     passed &= test_support::check(search.nodes() == 0, "node count resets for each search");
     return passed;
 }
@@ -391,12 +545,36 @@ bool run_mate_tests() {
 
 bool run_engine_tests() {
     bool passed = test_tt_mate_scores();
+    passed &= test_static_eval_cache();
     passed &= test_move_ordering();
+    passed &= test_move_ordering(true);
+    passed &= test_continuation_history();
+    passed &= test_support::check(test_combined_history_score(),
+                                  "combined history drives signed LMR adjustments without overflow");
+    passed &= test_history_search_reset();
     passed &= test_support::check(test_history_updates(), "piece-to history gravity updates");
     passed &= test_support::check(test_killer_heights(), "killers support the maximum ply height");
     passed &= test_search_draws();
     passed &= test_selective_search();
     passed &= test_search_timeout();
+    {
+        chess::engine_t search{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"};
+        for (const size_t limit : {size_t{1}, size_t{200}}) {
+            const auto score = search.run(40, search_timeout, search_timeout, limit, {});
+            passed &= test_support::check(!score.ignore() && search.nodes() <= limit,
+                                          "node-limited search preserves a score without exceeding its budget");
+        }
+        std::stop_source source;
+        source.request_stop();
+        const auto score = search.run(40, search_timeout, search_timeout, 200, source.get_token());
+        passed &= test_support::check(!score.ignore() && search.nodes() == 0,
+                                      "stop requested before search startup is not lost");
+        const auto expired = search.run(40, std::chrono::milliseconds{10},
+            std::chrono::milliseconds{10}, 200, {}, false,
+            std::chrono::steady_clock::now() - std::chrono::seconds{1});
+        passed &= test_support::check(expired == chess::DRAW && search.nodes() == 0,
+                                      "worker startup cannot extend an already expired command deadline");
+    }
     for (const auto fen : {"k7/4P3/8/8/8/8/8/7K w - - 0 1",
                           "7k/8/8/8/8/8/4p3/K7 b - - 0 1"}) {
         chess::engine_t search{fen};

@@ -63,6 +63,7 @@ struct position_t final {
   constexpr bool check() const noexcept;
   constexpr bool check(const move_t move) const noexcept;
   constexpr bool tactical(const move_t move) const noexcept;
+  constexpr int mvv_lva(const move_t move) const noexcept;
   constexpr score_t see(const move_t move) const noexcept;
   constexpr bool threefold_repetition() const noexcept;
   constexpr bool fifty_move_rule() const noexcept;

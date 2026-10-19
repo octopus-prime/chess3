@@ -74,6 +74,15 @@ constexpr bool position_t::tactical(const move_t move) const noexcept {
     return move.promotion() != NO_TYPE || at(move.to()).type() != NO_TYPE || (at(move.from()).type() == P && en_passant()[move.to()]);
 }
 
+constexpr int position_t::mvv_lva(const move_t move) const noexcept {
+    const auto attacker = at(move.from()).type();
+    auto victim = at(move.to()).type();
+    if (attacker == P && en_passant()[move.to()])
+        victim = P;
+    return 16 * int(score_t{victim}) + int(score_t{move.promotion()}) -
+        int(score_t{attacker});
+}
+
 constexpr bool position_t::fifty_move_rule() const noexcept {
     return _halfmove >= 100;
 }

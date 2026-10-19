@@ -21,10 +21,12 @@ constexpr transposition_t::entry_t::key_t make_key(const hash_t hash) noexcept {
     return {uint16_t(hash >> 43), uint16_t(hash >> 23)};
 }
 
-transposition_t::transposition_t(size_t mb) : _buckets(mb * BUCKETS_PER_MB + 137), _used() {}
+transposition_t::transposition_t(size_t mb)
+    : _buckets(mb * BUCKETS_PER_MB + 137), _evaluations(EVALUATION_COUNT), _used() {}
 
 void transposition_t::clear() noexcept {
     std::ranges::fill(_buckets, bucket_t{});
+    std::ranges::fill(_evaluations, evaluation_t{});
     _used = 0;
 }
 
@@ -53,6 +55,17 @@ std::optional<transposition_t::entry_t> transposition_t::get(const hash_t hash, 
 
 size_t transposition_t::full() const noexcept {
     return size_t(1000.f * _used / (_buckets.size() * BUCKET_SIZE));
+}
+
+std::optional<score_t> transposition_t::get_eval(const hash_t hash) const noexcept {
+    const auto& entry = _evaluations[hash & (EVALUATION_COUNT - 1)];
+    if (entry.key != hash || entry.value.ignore())
+        return std::nullopt;
+    return entry.value;
+}
+
+void transposition_t::put_eval(const hash_t hash, const score_t evaluation) noexcept {
+    _evaluations[hash & (EVALUATION_COUNT - 1)] = {hash, evaluation};
 }
 
 } // namespace chess
