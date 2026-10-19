@@ -3,6 +3,7 @@ module;
 #include <string_view>
 #include <istream>
 #include <thread>
+#include <chrono>
 
 export module engine.uci;
 
@@ -18,7 +19,7 @@ private:
     void isready() noexcept;
     void ucinewgame() noexcept;
     void position(const std::string_view args) noexcept;
-    void go(const std::string_view args) noexcept;
+    void go(std::string_view args, std::chrono::steady_clock::time_point received) noexcept;
     void stop() noexcept;
     void setoption(std::string_view args) noexcept;
 

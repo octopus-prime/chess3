@@ -493,8 +493,8 @@ bool test_search_timeout() {
     const score_t expected = evaluator.evaluate(position_t{fen});
     passed &= test_support::check(test_search(search, 0) == expected,
                                   "timeout restores the root position");
-    passed &= test_support::check(search(std::numeric_limits<ply_t>::max(), milliseconds{0}) == expected,
-                                  "zero-time search returns the root evaluation");
+    passed &= test_support::check(search(std::numeric_limits<ply_t>::max(), milliseconds{0}) == DRAW,
+                                  "zero-time search returns a neutral score without evaluation");
     passed &= test_support::check(search.nodes() == 0, "node count resets for each search");
     return passed;
 }
@@ -569,6 +569,11 @@ bool run_engine_tests() {
         const auto score = search.run(40, search_timeout, search_timeout, 200, source.get_token());
         passed &= test_support::check(!score.ignore() && search.nodes() == 0,
                                       "stop requested before search startup is not lost");
+        const auto expired = search.run(40, std::chrono::milliseconds{10},
+            std::chrono::milliseconds{10}, 200, {}, false,
+            std::chrono::steady_clock::now() - std::chrono::seconds{1});
+        passed &= test_support::check(expired == chess::DRAW && search.nodes() == 0,
+                                      "worker startup cannot extend an already expired command deadline");
     }
     for (const auto fen : {"k7/4P3/8/8/8/8/8/7K w - - 0 1",
                           "7k/8/8/8/8/8/4p3/K7 b - - 0 1"}) {

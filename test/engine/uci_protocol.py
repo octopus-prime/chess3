@@ -118,6 +118,15 @@ class ProtocolTests(unittest.TestCase):
             self.wait("readyok")
             self.assertEqual(sum(line.startswith("bestmove ") for line in self.transcript), count)
 
+    def test_short_tournament_clocks(self):
+        for moves in ("", " moves e2e4"):
+            for remaining in (1000, 100, 20, 1, 0):
+                self.send("position startpos" + moves)
+                start = time.monotonic()
+                self.send(f"go wtime {remaining} btime {remaining} movestogo 40")
+                self.assertNotEqual(self.bestmove(), "0000")
+                self.assertLess(time.monotonic() - start, 0.15)
+
     def test_invalid_input_and_options(self):
         for command in (
             "go depth", "go depth -1", "go nodes 0", "go movestogo 0",

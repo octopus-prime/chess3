@@ -90,28 +90,30 @@ score_t engine_t::operator()(const ply_t max_depth, const std::chrono::steady_cl
 
 bool engine_t::interrupted() const noexcept {
     return _stop.stop_requested() || _nodes >= _node_limit ||
-        ((_nodes & 1023) == 0 && std::chrono::steady_clock::now() >= _end);
+        ((_nodes & 127) == 0 && std::chrono::steady_clock::now() >= _end);
 }
 
 score_t engine_t::run(const ply_t max_depth, const std::chrono::steady_clock::duration duration,
                       const std::chrono::steady_clock::duration soft_limit,
                       const size_t node_limit, const std::stop_token stop,
-                      const bool wait_for_stop) noexcept {
+                      const bool wait_for_stop, const std::chrono::steady_clock::time_point start) noexcept {
     using namespace std::chrono;
     std::array<chess::move_t, 256> buffer;
     char output[2048];
-    const auto start = steady_clock::now();
     _nodes = 0;
     _end = start + duration;
     _stop = stop;
     _node_limit = node_limit;
-    score_t score = qsearch(0, MIN, MAX);
-    if (score.ignore())
-        score = evaluate();
+    score_t score{DRAW};
     move_t best_move{};
     const auto legal = _position.generate_all_moves(buffer);
     if (!legal.empty())
         best_move = legal.front();
+    if (!interrupted()) {
+        const auto initial = qsearch(0, MIN, MAX);
+        if (!initial.ignore())
+            score = initial;
+    }
     for (unsigned depth = 1; depth <= max_depth; ++depth) {
         if (interrupted() || steady_clock::now() >= start + soft_limit)
             break;

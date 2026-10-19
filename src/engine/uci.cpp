@@ -116,8 +116,9 @@ void uci_t::operator()(std::istream& stream) noexcept {
             stop();
             position(args);
         } else if (command == "go") {
+            const auto received = std::chrono::steady_clock::now();
             stop();
-            go(args);
+            go(args, received);
         } else if (command == "stop")
             stop();
         else if (command == "setoption") {
@@ -237,7 +238,7 @@ void uci_t::position(std::string_view args) noexcept {
     engine.setup(fen, moves);
 }
 
-void uci_t::go(std::string_view args) noexcept {
+void uci_t::go(std::string_view args, const std::chrono::steady_clock::time_point received) noexcept {
     std::optional<int64_t> wtime, btime, movetime;
     int64_t winc = 0, binc = 0, movestogo = 25;
     int64_t depth = MAX_PLY - 2;
@@ -287,8 +288,8 @@ void uci_t::go(std::string_view args) noexcept {
             hard = milliseconds{std::min(available, budget * 3)};
         }
     }
-    worker = std::jthread{[this, depth, hard, soft, nodes, infinite](std::stop_token stop) {
-        engine.run(static_cast<ply_t>(depth), hard, soft, nodes, stop, infinite);
+    worker = std::jthread{[this, depth, hard, soft, nodes, infinite, received](std::stop_token stop) {
+        engine.run(static_cast<ply_t>(depth), hard, soft, nodes, stop, infinite, received);
         engine.clear();
     }};
 }

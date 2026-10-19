@@ -27,7 +27,8 @@ struct engine_t final {
     score_t operator()(const ply_t depth, const std::chrono::steady_clock::duration duration) noexcept;
     score_t run(ply_t depth, std::chrono::steady_clock::duration hard_limit,
                 std::chrono::steady_clock::duration soft_limit, size_t node_limit,
-                std::stop_token stop, bool wait_for_stop = false) noexcept;
+                std::stop_token stop, bool wait_for_stop = false,
+                std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now()) noexcept;
     size_t nodes() const noexcept;
     size_t full() const noexcept;
     std::span<move_t> extract_pv(const std::span<move_t, MAX_PLY> buffer, ply_t max_length) noexcept;

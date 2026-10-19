@@ -494,7 +494,11 @@ movetime subtracts this reserve. Clock searches use a soft budget of remaining
 usable time divided by `movestogo` (default 25), plus 75% of the increment, capped
 by usable time. The hard budget is at most three times the soft budget and never
 exceeds usable time. Soft limits stop between iterations; hard limits are polled
-every 1024 nodes. Stop requests and node limits are checked at every node.
+every 128 nodes. Stop requests and node limits are checked at every node.
+Deadlines start when the UCI command loop receives `go`, before joining the
+previous worker or starting the next one. An already expired search returns a
+legal fallback without running NNUE or initial quiescence. An interrupted initial
+quiescence uses a neutral fallback score rather than evaluating after the deadline.
 Scheduling delays can still cause deadline overshoot, so retain a safety reserve.
 TT/history clearing after each UCI search is intentionally unchanged for now;
 `ucinewgame` resets the engine too.
