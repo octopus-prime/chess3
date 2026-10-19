@@ -108,6 +108,21 @@ class ProtocolTests(unittest.TestCase):
         self.send("go winc 0 wtime 5000 binc 0 btime 100 movestogo 20")
         self.assertNotEqual(self.bestmove(), "0000")
 
+    def test_learning_state_is_cleared_between_go_commands(self):
+        results = []
+        for _ in range(2):
+            self.send("position startpos")
+            start = len(self.transcript)
+            self.send("go depth 7")
+            move = self.bestmove()
+            info = [line for line in self.transcript[start:]
+                    if line.startswith("info depth 7 ")]
+            self.assertEqual(len(info), 1)
+            nodes = int(re.search(r" nodes (\d+)", info[0])[1])
+            score = re.search(r" score (cp|mate) ([+-]?\d+)", info[0]).groups()
+            results.append((move, nodes, score))
+        self.assertEqual(results[1], results[0])
+
     def test_immediate_stop_is_not_lost(self):
         self.send("position startpos")
         for count in range(1, 6):

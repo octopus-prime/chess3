@@ -36,6 +36,7 @@ struct engine_t final {
     void setup(const std::string_view fen, const std::string_view moves) noexcept;
     void reset() noexcept;
     void clear() noexcept;
+    void clear_search_state() noexcept;
 
     side_t side() const noexcept;
 
@@ -52,6 +53,9 @@ private:
     killer_t _killer;
     history_t _history;
     continuation_history_t _continuation;
+    correction_history_t _pawn_correction;
+    correction_history_t _minor_correction;
+    correction_history_t _major_correction;
     evaluator_t _evaluator;
     size_t _nodes;
     std::chrono::steady_clock::time_point _end;

@@ -4,6 +4,7 @@ module;
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <bit>
 #include <functional>
 #include <span>
 #include <string_view>
@@ -24,6 +25,29 @@ import types.type;
 
 namespace chess {
 
+namespace {
+
+hash_t piece_structure_key(const position_t& position, const type_t first,
+                           const type_t second) noexcept {
+    const auto mix = [](uint64_t value) {
+        value = (value ^ (value >> 30)) * 0xBF58476D1CE4E5B9ull;
+        value = (value ^ (value >> 27)) * 0x94D049BB133111EBull;
+        return value ^ (value >> 31);
+    };
+    uint64_t key = 0x9E3779B97F4A7C15ull;
+    for (const side_t side : {WHITE, BLACK}) {
+        for (const type_t type : {first, second}) {
+            const uint64_t bitboard = static_cast<uint64_t>(position.by(side, type));
+            const uint64_t salt = 0x9E3779B97F4A7C15ull *
+                (1 + static_cast<uint64_t>(side) * MAX_TYPE + static_cast<uint64_t>(type));
+            key = mix(key ^ mix(bitboard ^ salt));
+        }
+    }
+    return key;
+}
+
+}
+
 engine_t::engine_t(const std::string_view fen) noexcept : _position(fen), _transposition(), _killer(), _history(), _nodes{}, _end{} {}
 
 void engine_t::setup(const std::string_view fen, const std::string_view moves) noexcept {
@@ -40,10 +64,17 @@ void engine_t::reset() noexcept {
 }
 
 void engine_t::clear() noexcept {
+    clear_search_state();
+}
+
+void engine_t::clear_search_state() noexcept {
     _transposition.clear();
     _killer.clear();
     _history.clear();
     _continuation.clear();
+    _pawn_correction.clear();
+    _minor_correction.clear();
+    _major_correction.clear();
     _nodes = 0;
 }
 
@@ -211,7 +242,36 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
     if (moves.empty())
         return in_check ? score_e(MIN + height) : DRAW;
 
-    const score_t static_eval = in_check ? score_t{DRAW} : evaluate();
+    const auto pawn_key = [](const position_t& position) {
+        const uint64_t white = static_cast<uint64_t>(position.by(WHITE, P));
+        const uint64_t black = static_cast<uint64_t>(position.by(BLACK, P));
+        return (white * 0x9E3779B97F4A7C15ull) ^
+               std::rotl(black * 0xBF58476D1CE4E5B9ull, 29);
+    };
+    const score_t raw_static_eval = in_check ? score_t{DRAW} : evaluate();
+    const hash_t pawns = in_check ? 0 : pawn_key(_position);
+    const hash_t minors = in_check ? 0 : piece_structure_key(_position, N, B);
+    const hash_t majors = in_check ? 0 : piece_structure_key(_position, R, Q);
+    int correction_sum{};
+    int correction_count{};
+    const auto add_correction = [&](const correction_history_t& history, const hash_t key) {
+        if (const auto correction = history.get(key, _position.side())) {
+            correction_sum += *correction;
+            ++correction_count;
+        }
+    };
+    add_correction(_pawn_correction, pawns);
+    add_correction(_minor_correction, minors);
+    add_correction(_major_correction, majors);
+    const int correction = correction_count == 0 ? 0 : correction_sum / (2 * correction_count);
+    const score_t static_eval = in_check ? score_t{DRAW} : score_t{score_e(std::clamp(
+        int{raw_static_eval} + correction,
+        int{MIN} + 1, int{MAX} - 1))};
+    const auto update_corrections = [&](const int error) {
+        _pawn_correction.update(pawns, _position.side(), error, depth);
+        _minor_correction.update(minors, _position.side(), error, depth);
+        _major_correction.update(majors, _position.side(), error, depth);
+    };
     if (!PV && !in_check && depth <= 7 && !beta.decisive() &&
         static_eval - 80 * depth >= beta)
         return static_eval;
@@ -290,6 +350,8 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
         if (score >= beta) {
             _transposition.put(_position.hash(), move, beta, LOWER, depth, height);
             if (!_position.tactical(move)) {
+                if (!in_check && depth >= 3 && !beta.decisive())
+                    update_corrections(int{beta} - int{raw_static_eval});
                 _killer.put(move, height);
                 const int bonus = history_t::bonus(depth);
                 const auto update_history = [&](const move_t quiet, const int value) {
@@ -312,6 +374,9 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
 
     if (alpha > original_alpha) {
         _transposition.put(_position.hash(), best_move, alpha, EXACT, depth, height);
+        if (!in_check && depth >= 3 && !alpha.decisive() &&
+            best_move != move_t{} && !_position.tactical(best_move))
+            update_corrections(int{alpha} - int{raw_static_eval});
     } else {
         _transposition.put(_position.hash(), best_move, alpha, UPPER, depth, height);
     }

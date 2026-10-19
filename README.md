@@ -250,6 +250,21 @@ The fixed-size table uses about 1.5 MiB, allocated once when constructing the en
 searching and clearing it perform no allocations. `clear()` resets both histories,
 including the existing UCI clearing after each search.
 
+The engine learns static-evaluation corrections during main search from pawn,
+minor-piece (knights and bishops), and major-piece (rooks and queens) structure.
+Each uses its own 16,384-entry direct-mapped table, stores separate side-to-move
+corrections, and verifies the full 64-bit key before using an entry. Quiet beta
+cutoffs and completed exact nodes at depth three or greater update all three
+tables toward the observed search residual using a depth-weighted moving average;
+decisive scores and in-check nodes are excluded. The mean of the currently
+matching corrections, scaled by one half, is added to the raw NNUE score before
+main-search pruning. No separate king correction is used. QSearch, the NNUE
+evaluator, and the raw evaluation cache remain unchanged. Learned values are
+shared across iterative-deepening iterations within one UCI `go` command, then
+cleared along with the rest of the search state. `ucinewgame` also clears them,
+so residuals learned in an opening search cannot carry over into later moves or
+endgames.
+
 ## Selective search
 
 [engine.cpp](src/engine/engine.cpp) deliberately trades exhaustive coverage for

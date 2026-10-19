@@ -5,12 +5,15 @@ module;
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 export module engine.history;
 
 import types.piece;
 import types.square;
 import types.ply;
+import types.hash;
+import types.side;
 
 // decl
 
@@ -36,6 +39,25 @@ struct continuation_history_t final {
 private:
     std::unique_ptr<std::array<history_t, MAX_PIECE * MAX_SQUARE>> _entries =
         std::make_unique<std::array<history_t, MAX_PIECE * MAX_SQUARE>>();
+};
+
+struct correction_history_t final {
+    static constexpr size_t ENTRY_COUNT = 16384;
+    static constexpr int LIMIT = 512;
+
+    std::optional<int> get(hash_t key, side_t side) const noexcept;
+    void update(hash_t key, side_t side, int error, ply_t depth) noexcept;
+    void clear() noexcept;
+
+private:
+    struct entry_t final {
+        hash_t key{};
+        std::array<int16_t, MAX_SIDE> values{};
+        std::array<bool, MAX_SIDE> initialized{};
+        bool occupied{};
+    };
+    std::unique_ptr<std::array<entry_t, ENTRY_COUNT>> _entries =
+        std::make_unique<std::array<entry_t, ENTRY_COUNT>>();
 };
 
 } // namespace chess
@@ -79,6 +101,29 @@ history_t& continuation_history_t::get(const piece_t previous_piece,
 void continuation_history_t::clear() noexcept {
     for (auto& entry : *_entries)
         entry.clear();
+}
+
+std::optional<int> correction_history_t::get(const hash_t key, const side_t side) const noexcept {
+    const auto& entry = (*_entries)[key % ENTRY_COUNT];
+    return entry.occupied && entry.key == key && entry.initialized[side]
+        ? std::optional<int>{entry.values[side]}
+        : std::nullopt;
+}
+
+void correction_history_t::update(const hash_t key, const side_t side,
+                                  int error, const ply_t depth) noexcept {
+    auto& entry = (*_entries)[key % ENTRY_COUNT];
+    if (!entry.occupied || entry.key != key)
+        entry = {key, {}, {}, true};
+    error = std::clamp(error, -LIMIT, LIMIT);
+    auto& value = entry.values[side];
+    value = static_cast<int16_t>(value +
+        (error - value) * int{depth} / (int{depth} + 8));
+    entry.initialized[side] = true;
+}
+
+void correction_history_t::clear() noexcept {
+    std::ranges::fill(*_entries, entry_t{});
 }
 
 } // namespace chess

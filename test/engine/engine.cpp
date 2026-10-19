@@ -323,6 +323,47 @@ bool test_history_search_reset() {
     return passed;
 }
 
+bool test_correction_history() {
+    using namespace chess;
+    correction_history_t correction;
+    bool passed = test_support::check(!correction.get(0, WHITE) &&
+                                      !correction.get(1, BLACK),
+                                      "correction history starts empty, including hash zero");
+    correction.update(0, WHITE, 300, 8);
+    passed &= test_support::check(correction.get(0, WHITE) == 150 &&
+                                  !correction.get(0, BLACK),
+                                  "correction history learns independently by side to move");
+    correction.update(0, WHITE, -300, 8);
+    passed &= test_support::check(correction.get(0, WHITE) == -75,
+                                  "correction history moves toward later residual observations");
+    correction.update(0, WHITE, 100000, 255);
+    passed &= test_support::check(correction.get(0, WHITE) <= correction_history_t::LIMIT &&
+                                  correction.get(0, WHITE) > 0,
+                                  "correction history bounds extreme observations");
+    correction.update(1, BLACK, -400, 8);
+    passed &= test_support::check(!correction.get(0, BLACK) &&
+                                  correction.get(1, BLACK) == -200 &&
+                                  !correction.get(1, WHITE),
+                                  "correction history verifies full keys and isolates colors");
+    correction.update(1 + correction_history_t::ENTRY_COUNT, BLACK, 200, 8);
+    passed &= test_support::check(!correction.get(1, BLACK) &&
+                                  correction.get(1 + correction_history_t::ENTRY_COUNT, BLACK) == 100,
+                                  "direct-map collisions replace rather than alias corrections");
+    correction.clear();
+    passed &= test_support::check(!correction.get(0, WHITE) &&
+                                  !correction.get(1 + correction_history_t::ENTRY_COUNT, BLACK),
+                                  "correction clear removes all learned values");
+    const auto before = test_allocation_count();
+    for (hash_t hash = 0; hash < correction_history_t::ENTRY_COUNT; ++hash) {
+        correction.update(hash, hash & 1 ? WHITE : BLACK, int(hash % 257) - 128, 8);
+        (void)correction.get(hash, hash & 1 ? WHITE : BLACK);
+    }
+    correction.clear();
+    passed &= test_support::check(test_allocation_count() == before,
+                                  "correction history learns, probes and clears without allocations");
+    return passed;
+}
+
 constexpr bool test_history_updates() {
     using namespace chess;
     history_t history;
@@ -548,6 +589,7 @@ bool run_engine_tests() {
     passed &= test_static_eval_cache();
     passed &= test_move_ordering();
     passed &= test_move_ordering(true);
+    passed &= test_correction_history();
     passed &= test_continuation_history();
     passed &= test_support::check(test_combined_history_score(),
                                   "combined history drives signed LMR adjustments without overflow");

@@ -289,7 +289,7 @@ void uci_t::go(std::string_view args, const std::chrono::steady_clock::time_poin
     }
     worker = std::jthread{[this, depth, hard, soft, nodes, infinite, received](std::stop_token stop) {
         engine.run(static_cast<ply_t>(depth), hard, soft, nodes, stop, infinite, received);
-        engine.clear();
+        engine.clear_search_state();
     }};
 }
 
