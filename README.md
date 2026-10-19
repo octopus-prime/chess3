@@ -490,7 +490,12 @@ and Chess960 are not implemented; this engine uses one search thread and a fixed
 16 MiB transposition table.
 
 `Move Overhead` is a UCI spin option (default 20 ms, range 0–5000 ms). Fixed
-movetime subtracts this reserve. Clock searches use a soft budget of remaining
+movetime subtracts this reserve once. Clock searches reserve `Move Overhead`
+for **each** of the `movestogo` moves (default 25), not just the current move.
+For example, `40/1` with 20 ms overhead reserves 800 ms for communication and
+scheduling across the period, initially leaving a 5 ms soft search budget.
+If the reserve consumes the remaining clock, the engine returns a legal fallback.
+Clock searches use a soft budget of remaining
 usable time divided by `movestogo` (default 25), plus 75% of the increment, capped
 by usable time. The hard budget is at most three times the soft budget and never
 exceeds usable time. Soft limits stop between iterations; hard limits are polled

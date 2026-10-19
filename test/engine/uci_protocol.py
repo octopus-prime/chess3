@@ -127,6 +127,18 @@ class ProtocolTests(unittest.TestCase):
                 self.assertNotEqual(self.bestmove(), "0000")
                 self.assertLess(time.monotonic() - start, 0.15)
 
+    def test_period_budget_with_communication_delay(self):
+        self.send("setoption name Move Overhead value 20")
+        self.send("position startpos")
+        remaining = 1000.0
+        for moves in range(40, 0, -1):
+            start = time.monotonic()
+            self.send(f"go wtime {int(remaining)} btime {int(remaining)} movestogo {moves}")
+            self.assertNotEqual(self.bestmove(), "0000")
+            time.sleep(0.010)
+            remaining -= (time.monotonic() - start) * 1000
+            self.assertGreater(remaining, 0, f"clock exhausted with {moves - 1} moves remaining")
+
     def test_invalid_input_and_options(self):
         for command in (
             "go depth", "go depth -1", "go nodes 0", "go movestogo 0",

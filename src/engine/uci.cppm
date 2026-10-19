@@ -4,12 +4,29 @@ module;
 #include <istream>
 #include <thread>
 #include <chrono>
+#include <algorithm>
+#include <cstdint>
 
 export module engine.uci;
 
 import engine.engine;
 
 export namespace chess {
+
+struct clock_budget_t {
+    std::chrono::milliseconds soft;
+    std::chrono::milliseconds hard;
+};
+
+constexpr clock_budget_t clock_budget(const int64_t remaining, const int64_t increment,
+                                      const int64_t moves, const int overhead) noexcept {
+    // Bound before multiplying: UCI permits an arbitrarily large movestogo.
+    const auto reserve = std::min(remaining, std::min(moves, remaining) * overhead);
+    const auto available = remaining - reserve;
+    const auto soft = std::min(available, available / moves + increment * 3 / 4);
+    return {std::chrono::milliseconds{soft},
+            std::chrono::milliseconds{std::min(available, soft * 3)}};
+}
 
 struct uci_t final {
     uci_t();

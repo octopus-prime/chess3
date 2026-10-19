@@ -281,11 +281,10 @@ void uci_t::go(std::string_view args, const std::chrono::steady_clock::time_poin
             hard = milliseconds{std::max(int64_t{0}, *movetime - move_overhead)};
             soft = hard;
         } else if (const auto remaining = engine.side() == WHITE ? wtime : btime; remaining) {
-            const auto available = std::max(int64_t{0}, *remaining - move_overhead);
             const auto increment = engine.side() == WHITE ? winc : binc;
-            const auto budget = std::min(available, available / movestogo + increment * 3 / 4);
-            soft = milliseconds{budget};
-            hard = milliseconds{std::min(available, budget * 3)};
+            const auto budget = clock_budget(*remaining, increment, movestogo, move_overhead);
+            soft = budget.soft;
+            hard = budget.hard;
         }
     }
     worker = std::jthread{[this, depth, hard, soft, nodes, infinite, received](std::stop_token stop) {
