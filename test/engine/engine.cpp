@@ -21,6 +21,8 @@ import types.piece;
 import types.hash;
 import types.ply;
 
+size_t test_allocation_count() noexcept;
+
 namespace {
 
 constexpr auto search_timeout = std::chrono::hours{1};
@@ -83,6 +85,52 @@ bool test_tt_mate_scores() {
                                           "TT preserves non-mate scores and ignore sentinels");
         }
     }
+    return passed;
+}
+
+bool test_static_eval_cache() {
+    using namespace chess;
+    transposition_t table{0};
+    bool passed = test_support::check(!table.get_eval(0) && !table.get_eval(1),
+                                      "empty eval cache misses, including the zero key");
+    table.put_eval(0, DRAW);
+    table.put_eval(1, score_e(-123));
+    passed &= test_support::check(table.get_eval(0) == score_t{DRAW} &&
+                                  table.get_eval(1) == score_t{score_e(-123)},
+                                  "eval cache preserves zero and negative evaluations");
+    table.put_eval(65537, score_e(456));
+    passed &= test_support::check(!table.get_eval(1) &&
+                                  table.get_eval(65537) == score_t{score_e(456)} &&
+                                  table.get_eval(0) == score_t{DRAW},
+                                  "eval cache collisions compare full keys and replace only their slot");
+    const move_t move{e2, e4};
+    table.put(65537, move, score_e(MAX - 5), LOWER, 12, 2);
+    const auto bound = table.get(65537, 4);
+    passed &= test_support::check(
+        bound && bound->score == MAX - 7 &&
+            table.get_eval(65537) == score_t{score_e(456)} &&
+            !table.get(1, 0),
+        "cached evaluation stays separate from mate-normalized bounds and search entries");
+    table.put_eval(65537, score_e(-999));
+    const auto unchanged = table.get(65537, 4);
+    passed &= test_support::check(unchanged && unchanged->move == move &&
+                                  unchanged->depth == 12 && unchanged->flag == LOWER &&
+                                  unchanged->score == MAX - 7,
+                                  "eval writes do not change TT bounds, depths or moves");
+    table.clear();
+    passed &= test_support::check(!table.get_eval(0) && !table.get_eval(65537) &&
+                                  !table.get(65537, 0) && table.full() == 0,
+                                  "TT clear also invalidates cached evaluations");
+    const auto before = test_allocation_count();
+    bool correct = true;
+    for (hash_t hash = 0; hash < 65536; ++hash)
+        table.put_eval(hash, score_e(int(hash % 2001) - 1000));
+    for (hash_t hash = 0; hash < 65536; ++hash)
+        correct &= table.get_eval(hash) == score_t{score_e(int(hash % 2001) - 1000)};
+    table.clear();
+    const auto after = test_allocation_count();
+    passed &= test_support::check(correct && after == before,
+                                  "filling, probing and clearing the entire eval cache allocates nothing");
     return passed;
 }
 
@@ -497,6 +545,7 @@ bool run_mate_tests() {
 
 bool run_engine_tests() {
     bool passed = test_tt_mate_scores();
+    passed &= test_static_eval_cache();
     passed &= test_move_ordering();
     passed &= test_move_ordering(true);
     passed &= test_continuation_history();

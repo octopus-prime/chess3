@@ -38,6 +38,8 @@ struct transposition_t final {
     void put(const hash_t hash, const move_t move, const score_t score, const flag_e flag,
              const ply_t depth, const ply_t height) noexcept;
     std::optional<entry_t> get(const hash_t hash, const ply_t height) const noexcept;
+    std::optional<score_t> get_eval(hash_t hash) const noexcept;
+    void put_eval(hash_t hash, score_t evaluation) noexcept;
     size_t full() const noexcept;
 
 private:
@@ -56,6 +58,12 @@ private:
    	constexpr static size_t BUCKETS_PER_MB = 1024 * 1024 / sizeof(bucket_t);
 
     std::vector<bucket_t> _buckets;
+    struct evaluation_t {
+        hash_t key{};
+        score_t value{IGNORE};
+    };
+    static constexpr size_t EVALUATION_COUNT = 65536;
+    std::vector<evaluation_t> _evaluations;
 	size_t _used;
 };
 

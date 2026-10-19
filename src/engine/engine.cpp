@@ -387,7 +387,12 @@ score_t engine_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
 }
 
 score_t engine_t::evaluate() noexcept {
-    return _evaluator.evaluate(_position);
+    const auto hash = _position.hash();
+    if (const auto cached = _transposition.get_eval(hash))
+        return *cached;
+    const auto evaluation = _evaluator.evaluate(_position);
+    _transposition.put_eval(hash, evaluation);
+    return evaluation;
     // using namespace attacks::generator;
     // const side_t side = position.side();
     // score_t score{};

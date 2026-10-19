@@ -205,6 +205,16 @@ losing scores do the reverse. This preserves mate distance when the same positio
 is reached at different search heights. Exact scores and both bound types use
 the same conversion; ordinary evaluations and ignore sentinels are unchanged.
 
+The TT also owns a separate direct-mapped static-evaluation cache with 65,536
+entries (about 1 MiB). Each entry verifies the complete 64-bit position hash and
+stores only the raw side-to-move NNUE score, never a search bound or mate-distance
+adjustment. Main search and quiescence share it through `engine_t::evaluate()`.
+The evaluator currently depends only on hashed board state, not the halfmove
+clock or repetition history; any future rule-50 scaling must be applied after
+the cached raw evaluation. A miss runs the normal accumulator-based evaluator.
+The cache is allocated once with the TT and cleared with it, including after
+each UCI search. The six-entry TT buckets and replacement strategy are unchanged.
+
 Main-search move ordering uses five lazy spans flattened with C++23 `views::join`:
 the legal TT move, tactical moves with nonnegative SEE sorted descending,
 both killers in priority order, quiet moves sorted by history, and remaining
