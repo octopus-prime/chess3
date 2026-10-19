@@ -258,6 +258,11 @@ searched that deeply; quiet sacrifices and zugzwang remain potential weaknesses.
 
 - Reverse futility pruning applies at Non-PV nodes through depth seven, outside
   check and decisive beta windows, with an `80 * depth` centipawn margin.
+- ProbCut is attempted at Non-PV nodes from depth five, outside check, when the
+  static evaluation is within 100 centipawns of beta. It searches up to four
+  captures or promotions with SEE at least `-50`, at depth reduced by four and
+  against a beta raised by 150 centipawns. A cutoff is stored as a lower bound
+  at depth reduced by three.
 - Null-move pruning requires a Non-PV node at depth three or greater, outside
   check, a non-decisive beta, a preceding real move, non-pawn/non-king material,
   more than eight legal moves, and static evaluation at least beta. Its reduction
