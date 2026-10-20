@@ -414,10 +414,12 @@ per perspective:
 
 The evaluator keeps its per-color, per-king-square accumulator cache. Features
 for both perspectives are enumerated together, sharing attack and pawn-pair
-generation. Each `refresh()` uses a fixed-size membership table to subtract
-cached features that disappeared and add new features, without sorting.
-Cached features are marked once and cleared as current features are visited;
-remaining marks identify removals, with branchless delta collection. Pawn-pair
+generation. Each perspective retains a fixed-size membership table for its most
+recent king-cache entry. Generation marks identify added and removed features in
+two passes, without sorting or remarking cached features on every evaluation.
+A king-cache switch rebuilds the marks from that entry's cached feature list;
+16-bit generation marks are cleared before wrapping. Delta collection is
+branchless. Pawn-pair
 enumeration uses adjacent-file bitboard masks rather than testing every pair.
 Feature and delta buffers have a conservative legal-position bound of 1,144
 indices (32 PSQs, at most 32 * 31 directed threats, and 120 pawn pairs).

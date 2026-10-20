@@ -125,6 +125,25 @@ bool test_allocation_free_evaluation() {
         test_support::check(after == before, "evaluation allocates nothing, including all cold king-cache entries");
 }
 
+bool test_membership_epoch_reset() {
+    const auto positions = std::make_unique<position_t[]>(nnue_reference::cases.size());
+    for (size_t i = 0; i < nnue_reference::cases.size(); ++i)
+        positions[i].setup(nnue_reference::cases[i].fen);
+
+    evaluator_t evaluator;
+    // Exceed the 16-bit generation range both with fixed kings and with cache switches.
+    for (const size_t count : {size_t{35}, nnue_reference::cases.size()}) {
+        for (size_t iteration = 0; iteration < 70000; ++iteration) {
+            const auto index = (iteration * 17 + iteration / 7) % count;
+            if (!test_support::check(
+                    evaluator.evaluate(positions[index]) == nnue_reference::cases[index].score,
+                    "membership generation resets preserve exact reference evaluations"))
+                return false;
+        }
+    }
+    return true;
+}
+
 }
 
 bool run_evaluator_tests() {
@@ -226,5 +245,6 @@ bool run_evaluator_tests() {
                                   "null-move undo preserves the cached evaluation");
     passed &= test_allocation_free_evaluation();
     passed &= test_random_cache_transitions();
+    passed &= test_membership_epoch_reset();
     return passed;
 }

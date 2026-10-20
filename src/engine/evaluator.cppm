@@ -28,7 +28,9 @@ private:
     std::array<nnue::feature_buffer_t, 2> _features;
     nnue::feature_buffer_t _removed;
     nnue::feature_buffer_t _added;
-    std::array<uint8_t, nnue::L0> _membership{};
+    std::array<std::array<uint16_t, nnue::L0>, MAX_SIDE> _membership{};
+    std::array<const nnue::entry_t*, MAX_SIDE> _membership_entries{};
+    std::array<uint16_t, MAX_SIDE> _membership_epochs{1, 1};
 };
 
 } // namespace chess
