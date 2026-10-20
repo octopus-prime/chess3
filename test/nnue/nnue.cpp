@@ -27,6 +27,33 @@ uint64_t feature_hash(const std::span<const uint32_t> features) {
     return hash;
 }
 
+bool test_paired_updates(const nnue::nnue_t& network) {
+    std::array<uint32_t, 33> removed;
+    std::array<uint32_t, 33> added;
+    for (size_t i = 0; i < removed.size(); ++i) {
+        removed[i] = (i * 997) % nnue::L0;
+        added[i] = (nnue::PSQ_OFFSET + i * 127) % nnue::L0;
+    }
+    for (const size_t remove_count : {0, 1, 2, 7, 16, 33})
+        for (const size_t add_count : {0, 1, 2, 7, 16, 33}) {
+            nnue::entry_t paired{};
+            network.initialize(paired);
+            for (size_t i = 0; i < nnue::L1; ++i)
+                paired.accumulation[i] = i % 2 ? int16_t{32760} : int16_t{-32760};
+            nnue::entry_t separate = paired;
+            const auto remove = std::span{removed}.first(remove_count);
+            const auto add = std::span{added}.first(add_count);
+            network.update(paired, remove, add);
+            network.update(separate, remove, {});
+            network.update(separate, {}, add);
+            if (!test_support::check(
+                    std::ranges::equal(paired.accumulation, separate.accumulation),
+                    "paired updates match separate updates for unequal counts and wrapping sums"))
+                return false;
+        }
+    return true;
+}
+
 bool test_network_errors() {
     const auto path = std::filesystem::temp_directory_path() /
         ("chess3-nnue-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
@@ -131,6 +158,7 @@ bool run_nnue_tests() {
     }
     passed &= test_support::check(std::ranges::all_of(buckets, [](const bool covered) { return covered; }),
                                   "reference positions cover all 32 network stacks");
+    passed &= test_paired_updates(*network);
     passed &= test_network_errors();
     return passed;
 }

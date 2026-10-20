@@ -423,7 +423,9 @@ Feature and delta buffers have a conservative legal-position bound of 1,144
 indices (32 PSQs, at most 32 * 31 directed threats, and 120 pawn pairs).
 Evaluation performs no heap allocations, including the first visit to any king
 cache entry; only evaluator construction allocates the network and cache.
-Accumulator updates stream weight rows in SIMD register tiles. This includes
+Accumulator updates stream weight rows in SIMD register tiles, combining paired
+additions and removals into weight differences before updating the accumulator.
+Unpaired rows are applied separately. This includes
 remote slider threats, pawn pairs, and queen-plane changes. There are no
 dirty-piece/dirty-threat records, accumulator stacks, or changes to move execution.
 
