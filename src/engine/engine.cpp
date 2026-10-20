@@ -216,33 +216,6 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
         static_eval - 80 * depth >= beta)
         return static_eval;
 
-    if (!PV && !in_check && depth >= 5 && int{beta} + 150 < WIN &&
-        static_eval >= beta - 100) {
-        const score_t probcut_beta{score_e(int{beta} + 150)};
-        size_t probcut_moves = 0;
-        for (const move_t move : moves) {
-            if (!_position.tactical(move) && move.promotion() == NO_TYPE)
-                continue;
-            if (_position.see(move) < -50)
-                continue;
-            if (probcut_moves == 4)
-                break;
-            ++probcut_moves;
-
-            _position.do_move(move);
-            const score_t score = -search<false>(
-                depth - 4, height + 1, -probcut_beta, score_e(-int{probcut_beta} + 1));
-            _position.undo_move(move);
-
-            if (score.ignore())
-                return IGNORE;
-            if (score >= probcut_beta) {
-                _transposition.put(_position.hash(), move, beta, LOWER, depth - 3, height);
-                return beta;
-            }
-        }
-    }
-
     // Null Move Pruning
     {
         if (!PV && depth >= 3 && !in_check && !beta.decisive() && _position.last_move() != move_t{} && !(_position.by(_position.side()) & ~_position.by(_position.side(), P, K)).empty() && moves.size() > 8 && static_eval >= beta) {
