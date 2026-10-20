@@ -263,6 +263,12 @@ searched that deeply; quiet sacrifices and zugzwang remain potential weaknesses.
   captures or promotions with SEE at least `-50`, at depth reduced by four and
   against a beta raised by 150 centipawns. A cutoff is stored as a lower bound
   at depth reduced by three.
+- Singular extension is tested at Non-PV nodes from depth six when a legal TT
+  move has a sufficiently deep lower-bound or exact entry. The search verifies
+  alternatives at half depth with the TT move excluded; if they all fail below
+  `TT score - 2 * depth`, that move receives one extra ply. Excluded-move
+  verification disables TT cutoffs, forward pruning, move pruning, and reductions
+  at the verification node and does not store its result in the TT.
 - Null-move pruning requires a Non-PV node at depth three or greater, outside
   check, a non-decisive beta, a preceding real move, non-pawn/non-king material,
   more than eight legal moves, and static evaluation at least beta. Its reduction

@@ -165,7 +165,8 @@ score_t engine_t::asearch(const score_t eval, const ply_t depth) noexcept {
 }
 
 template <bool PV>  
-score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta) noexcept {
+score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta,
+                          const move_t excluded_move) noexcept {
     if (interrupted())
         return IGNORE;
 
@@ -192,16 +193,15 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
             return alpha;
     }
 
-    move_t best_move{};
-    if (const auto entry = _transposition.get(_position.hash(), height)) {
-        best_move = entry->move;
-        if (entry->depth >= depth) {
-            if (entry->flag == EXACT)
-                return entry->score;
-            if (!PV && ((entry->flag == LOWER && entry->score >= beta) ||
-                        (entry->flag == UPPER && entry->score <= alpha)))
-                return entry->score;
-        }
+    const auto tt_entry = _transposition.get(_position.hash(), height);
+    const move_t tt_move = tt_entry ? tt_entry->move : move_t{};
+    move_t best_move = tt_move == excluded_move ? move_t{} : tt_move;
+    if (excluded_move == move_t{} && tt_entry && tt_entry->depth >= depth) {
+        if (tt_entry->flag == EXACT)
+            return tt_entry->score;
+        if (!PV && ((tt_entry->flag == LOWER && tt_entry->score >= beta) ||
+                    (tt_entry->flag == UPPER && tt_entry->score <= alpha)))
+            return tt_entry->score;
     }
     const score_t original_alpha = alpha;
 
@@ -212,11 +212,11 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
         return in_check ? score_e(MIN + height) : DRAW;
 
     const score_t static_eval = in_check ? score_t{DRAW} : evaluate();
-    if (!PV && !in_check && depth <= 7 && !beta.decisive() &&
+    if (excluded_move == move_t{} && !PV && !in_check && depth <= 7 && !beta.decisive() &&
         static_eval - 80 * depth >= beta)
         return static_eval;
 
-    if (!PV && !in_check && depth >= 5 && int{beta} + 150 < WIN &&
+    if (excluded_move == move_t{} && !PV && !in_check && depth >= 5 && int{beta} + 150 < WIN &&
         static_eval >= beta - 100) {
         const score_t probcut_beta{score_e(int{beta} + 150)};
         size_t probcut_moves = 0;
@@ -243,9 +243,26 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
         }
     }
 
+    move_t singular_move{};
+    if (excluded_move == move_t{} && !PV && !in_check && depth >= 6 &&
+        tt_entry && tt_move != move_t{} &&
+        std::ranges::find(moves, tt_move) != moves.end() &&
+        int{tt_entry->depth} >= int{depth} - 3 &&
+        (tt_entry->flag == LOWER || tt_entry->flag == EXACT) &&
+        !tt_entry->score.decisive() &&
+        int{tt_entry->score} >= int{beta} - 2 * int{depth}) {
+        const score_t singular_beta{score_e(int{tt_entry->score} - 2 * int{depth})};
+        const score_t alternatives = search<false>(
+            depth / 2, height, score_e(int{singular_beta} - 1), singular_beta, tt_move);
+        if (alternatives.ignore())
+            return IGNORE;
+        if (alternatives < singular_beta)
+            singular_move = tt_move;
+    }
+
     // Null Move Pruning
     {
-        if (!PV && depth >= 3 && !in_check && !beta.decisive() && _position.last_move() != move_t{} && !(_position.by(_position.side()) & ~_position.by(_position.side(), P, K)).empty() && moves.size() > 8 && static_eval >= beta) {
+        if (excluded_move == move_t{} && !PV && depth >= 3 && !in_check && !beta.decisive() && _position.last_move() != move_t{} && !(_position.by(_position.side()) & ~_position.by(_position.side(), P, K)).empty() && moves.size() > 8 && static_eval >= beta) {
             const int R = std::min(int{depth} - 1, 2 + depth / 3 +
                 std::min((int(static_eval) - int(beta)) / 200, 3));
             _position.do_null_move();
@@ -269,13 +286,15 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
     std::array<move_t, 256> searched_quiets;
     size_t quiets_searched = 0;
     for (const move_t& move : ordered) {
+        if (move == excluded_move)
+            continue;
         const bool is_tactical = _position.tactical(move);
         const int history_score = _history.score(_position.at(move.from()), move.to(), continuation);
         const bool advanced_pawn = _position.at(move.from()).type() == P &&
             (_position.side() == WHITE ? move.to().rank() >= _6 : move.to().rank() <= _3);
         if (!is_tactical)
             ++quiet_count;
-        const bool prune = !PV && !in_check && move_count > 0 &&
+        const bool prune = excluded_move == move_t{} && !PV && !in_check && move_count > 0 &&
             !alpha.decisive() && !advanced_pawn && move != killers[0] && move != killers[1];
         if (prune && !is_tactical && depth <= 5 &&
             (quiet_count > 3 + depth * depth ||
@@ -291,9 +310,11 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
         _position.do_move(move);
         const bool gives_check = _position.check();
         score_t score;
+        const int extension = move == singular_move ? 1 : 0;
         if (move_count > 1) {
             int reduction = 0;
-            if (depth >= 3 && move_count > (PV ? 3 : 2) && !is_tactical &&
+            if (excluded_move == move_t{} && extension == 0 &&
+                depth >= 3 && move_count > (PV ? 3 : 2) && !is_tactical &&
                 !in_check && !gives_check && !advanced_pawn && !alpha.decisive() &&
                 move != killers[0] && move != killers[1]) {
                 reduction = int(0.75f + std::log(float(depth)) * std::log(float(move_count)) / 2.25f);
@@ -301,13 +322,15 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
                 reduction -= history_score / 8192;
                 reduction = std::clamp(reduction, 1, int{depth} - 2);
             }
-            score = -search<false>(depth - 1 - reduction, height + 1, score_e(-alpha - 1), -alpha);
+            score = -search<false>(depth - 1 + extension - reduction, height + 1,
+                                   score_e(-alpha - 1), -alpha);
             if (reduction > 0 && score > alpha && !score.ignore())
-                score = -search<false>(depth - 1, height + 1, score_e(-alpha - 1), -alpha);
+                score = -search<false>(depth - 1 + extension, height + 1,
+                                       score_e(-alpha - 1), -alpha);
             if (PV && score > alpha && score < beta && !score.ignore())
-                score = -search<true>(depth - 1, height + 1, -beta, -alpha);
+                score = -search<true>(depth - 1 + extension, height + 1, -beta, -alpha);
         } else {
-            score = -search<PV>(depth - 1, height + 1, -beta, -alpha);
+            score = -search<PV>(depth - 1 + extension, height + 1, -beta, -alpha);
         }
         _position.undo_move(move);
 
@@ -315,8 +338,9 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
             return IGNORE;
 
         if (score >= beta) {
-            _transposition.put(_position.hash(), move, beta, LOWER, depth, height);
-            if (!_position.tactical(move)) {
+            if (excluded_move == move_t{})
+                _transposition.put(_position.hash(), move, beta, LOWER, depth, height);
+            if (excluded_move == move_t{} && !_position.tactical(move)) {
                 _killer.put(move, height);
                 const int bonus = history_t::bonus(depth);
                 const auto update_history = [&](const move_t quiet, const int value) {
@@ -337,10 +361,11 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
         }
     }
 
-    if (alpha > original_alpha) {
-        _transposition.put(_position.hash(), best_move, alpha, EXACT, depth, height);
-    } else {
-        _transposition.put(_position.hash(), best_move, alpha, UPPER, depth, height);
+    if (excluded_move == move_t{}) {
+        if (alpha > original_alpha)
+            _transposition.put(_position.hash(), best_move, alpha, EXACT, depth, height);
+        else
+            _transposition.put(_position.hash(), best_move, alpha, UPPER, depth, height);
     }
 
     return alpha;
