@@ -51,6 +51,7 @@ private:
     transposition_t _transposition;
     killer_t _killer;
     history_t _history;
+    capture_history_t _capture_history;
     continuation_history_t _continuation;
     evaluator_t _evaluator;
     size_t _nodes;

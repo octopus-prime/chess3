@@ -43,6 +43,7 @@ void engine_t::clear() noexcept {
     _transposition.clear();
     _killer.clear();
     _history.clear();
+    _capture_history.clear();
     _continuation.clear();
     _nodes = 0;
 }
@@ -262,12 +263,22 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
     const auto previous_move = _position.last_move();
     history_t* continuation = previous_move == move_t{} ? nullptr :
         &_continuation.get(_position.at(previous_move.to()), previous_move.to());
-    auto ordered = ordered_moves(_position, moves, best_move, killers, _history, continuation);
+    const auto captured_type = [&](const move_t move) {
+        const type_t victim = _position.at(move.to()).type();
+        return victim == NO_TYPE && _position.at(move.from()).type() == P &&
+                _position.en_passant()[move.to()]
+            ? type_t{P}
+            : victim;
+    };
+    auto ordered = ordered_moves(_position, moves, best_move, killers, _history,
+                                 _capture_history, continuation);
 
     size_t move_count = 0;
     size_t quiet_count = 0;
     std::array<move_t, 256> searched_quiets;
     size_t quiets_searched = 0;
+    std::array<move_t, 256> searched_captures;
+    size_t captures_searched = 0;
     for (const move_t& move : ordered) {
         const bool is_tactical = _position.tactical(move);
         const int history_score = _history.score(_position.at(move.from()), move.to(), continuation);
@@ -288,6 +299,8 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
         ++move_count;
         if (!is_tactical)
             searched_quiets[quiets_searched++] = move;
+        else if (captured_type(move) != NO_TYPE)
+            searched_captures[captures_searched++] = move;
         _position.do_move(move);
         const bool gives_check = _position.check();
         score_t score;
@@ -316,9 +329,18 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
 
         if (score >= beta) {
             _transposition.put(_position.hash(), move, beta, LOWER, depth, height);
-            if (!_position.tactical(move)) {
+            const int bonus = history_t::bonus(depth);
+            const type_t victim = captured_type(move);
+            if (victim != NO_TYPE) {
+                _capture_history.update(_position.at(move.from()), move.to(),
+                                        victim, bonus);
+                for (const move_t previous :
+                     std::span{searched_captures}.first(captures_searched - 1)) {
+                    _capture_history.update(_position.at(previous.from()), previous.to(),
+                                            captured_type(previous), -bonus);
+                }
+            } else if (!_position.tactical(move)) {
                 _killer.put(move, height);
-                const int bonus = history_t::bonus(depth);
                 const auto update_history = [&](const move_t quiet, const int value) {
                     const auto piece = _position.at(quiet.from());
                     _history.update(piece, quiet.to(), value);

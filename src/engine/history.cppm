@@ -29,6 +29,17 @@ private:
     std::array<std::array<int16_t, MAX_SQUARE>, MAX_PIECE> _entries{};
 };
 
+struct capture_history_t final {
+    static constexpr int LIMIT = history_t::LIMIT;
+
+    constexpr int get(piece_t piece, square_t to, type_t victim) const noexcept;
+    constexpr void update(piece_t piece, square_t to, type_t victim, int bonus) noexcept;
+    constexpr void clear() noexcept;
+
+private:
+    std::array<std::array<std::array<int16_t, MAX_TYPE>, MAX_SQUARE>, MAX_PIECE> _entries{};
+};
+
 struct continuation_history_t final {
     history_t& get(const piece_t previous_piece, const square_t previous_to) noexcept;
     void clear() noexcept;
@@ -64,6 +75,26 @@ constexpr void history_t::update(const piece_t piece, const square_t to, int bon
 constexpr void history_t::clear() noexcept {
     for (auto& entry : _entries)
         entry.fill(0);
+}
+
+constexpr int capture_history_t::get(const piece_t piece, const square_t to,
+                                     const type_t victim) const noexcept {
+    return _entries[piece][to][victim];
+}
+
+constexpr void capture_history_t::update(const piece_t piece, const square_t to,
+                                         const type_t victim, int bonus) noexcept {
+    bonus = std::clamp(bonus, -LIMIT, LIMIT);
+    const int magnitude = bonus < 0 ? -bonus : bonus;
+    auto& entry = _entries[piece][to][victim];
+    const int value = entry;
+    entry = static_cast<int16_t>(value + bonus - value * magnitude / LIMIT);
+}
+
+constexpr void capture_history_t::clear() noexcept {
+    for (auto& piece : _entries)
+        for (auto& square : piece)
+            square.fill(0);
 }
 
 constexpr int history_t::bonus(const ply_t depth) noexcept {

@@ -166,7 +166,8 @@ bool test_move_ordering(const bool with_continuation = false) {
                                 static_cast<int>(i * 64));
     }
 
-    auto ordered = ordered_moves(position, moves, best, killers, history,
+    capture_history_t capture_history;
+    auto ordered = ordered_moves(position, moves, best, killers, history, capture_history,
                                  with_continuation ? &continuation : nullptr);
     std::array<move_t, 256> actual;
     size_t count{};
@@ -223,6 +224,45 @@ bool test_move_ordering(const bool with_continuation = false) {
     passed &= test_support::check(count == legal_moves.size(), "all legal moves are ordered");
     passed &= test_support::check(phase_counts[0] == 1 && phase_counts[2] == 2,
                                   "TT move and both killers appear in their phases");
+    return passed;
+}
+
+bool test_capture_history() {
+    using namespace chess;
+    capture_history_t history;
+    bool passed = test_support::check(history.get(WN, d5, P) == 0 &&
+                                      history.get(WN, d5, N) == 0,
+                                      "capture history starts at zero and isolates victim type");
+    history.update(WN, d5, P, 4096);
+    passed &= test_support::check(history.get(WN, d5, P) == 4096 &&
+                                  history.get(BN, d5, P) == 0 &&
+                                  history.get(WN, f5, P) == 0,
+                                  "capture history indexes attacker and destination");
+    history.update(WN, d5, P, -4096);
+    passed &= test_support::check(history.get(WN, d5, P) == -1024,
+                                  "capture history uses gravity updates");
+    history.update(WB, c4, Q, -1000000);
+    passed &= test_support::check(history.get(WB, c4, Q) == -capture_history_t::LIMIT,
+                                  "capture history clamps extreme bonuses");
+    history.clear();
+    passed &= test_support::check(history.get(WN, d5, P) == 0 &&
+                                  history.get(WB, c4, Q) == 0,
+                                  "capture history clear resets entries");
+
+    const position_t position{"4k3/8/8/3p4/8/2N5/6B1/4K3 w - - 0 1"};
+    std::array<move_t, 256> buffer;
+    const auto legal = position.generate_all_moves(buffer);
+    const move_t preferred{c3, d5};
+    const move_t other{g2, d5};
+    passed &= test_support::check(position.see(preferred) == position.see(other),
+                                  "capture-history ordering fixture has equal SEE captures");
+    history.update(WN, d5, P, 8192);
+    std::array<move_t, 2> no_killers{};
+    history_t quiet_history;
+    auto ordered = ordered_moves(position, legal, {}, no_killers, quiet_history, history);
+    const move_t first = *ordered.begin();
+    passed &= test_support::check(first == preferred,
+                                  "capture history breaks ties within equal-SEE capture phase");
     return passed;
 }
 
@@ -548,6 +588,7 @@ bool run_engine_tests() {
     passed &= test_static_eval_cache();
     passed &= test_move_ordering();
     passed &= test_move_ordering(true);
+    passed &= test_capture_history();
     passed &= test_continuation_history();
     passed &= test_support::check(test_combined_history_score(),
                                   "combined history drives signed LMR adjustments without overflow");

@@ -216,9 +216,9 @@ The cache is allocated once with the TT and cleared with it, including after
 each UCI search. The six-entry TT buckets and replacement strategy are unchanged.
 
 Main-search move ordering uses five lazy spans flattened with C++23 `views::join`:
-the legal TT move, tactical moves with nonnegative SEE sorted descending,
-both killers in priority order, quiet moves sorted by history, and remaining
-tactical moves sorted by SEE. Each phase
+the legal TT move, tactical moves with nonnegative SEE sorted by SEE then capture
+history, both killers in priority order, quiet moves sorted by history, and
+remaining tactical moves sorted by SEE then capture history. Each phase
 only processes the unconsumed suffix. A cutoff skips later phases. Missing or
 already-consumed TT/killer moves are ignored; every legal move is visited once.
 The production ordering overload uses `position_t::see(move)` for tactical
@@ -227,7 +227,7 @@ custom scores.
 
 Quiet moves in the fourth phase use [engine.history](src/engine/history.cppm), a zero-initialized
 `int16_t` piece-to table indexed by colored piece and destination square. Remaining
-tactical moves retain their SEE ordering. History does not affect the
+tactical moves retain SEE as their primary ordering. Quiet history does not affect the
 nonnegative tactical-score partition or TT/killer priority.
 A quiet beta cutoff rewards its move and penalizes previously searched quiet
 moves at that node, after restoring the parent position. A fixed-size list excludes
@@ -235,7 +235,7 @@ pruned moves from these penalties. The depth bonus is
 `min(16 * depth * depth, 2048)`, calculated with a bounded depth to avoid overflow.
 Updates use history gravity (`value += bonus - value * abs(bonus) / 16384`) with
 the bonus clamped to `[-16384, 16384]` and arithmetic in `int`. Captures and
-promotions do not update history. Each `engine_t` owns its table and retains it
+captures and promotions do not update quiet history. Each `engine_t` owns its table and retains it
 across iterative-deepening calls; constructing a new search starts with zero history.
 
 Quiet ordering also adds a one-ply continuation-history score, indexed by the
@@ -245,10 +245,17 @@ penalties to this contextual table. The previous move may be tactical; a promote
 piece uses its promoted type, and castling uses the king's destination. Positions
 without a previous move, including immediately after a null move, use ordinary
 history alone. Quiet ordering and LMR use the same sum of ordinary and continuation
-history. Tactical phases are unchanged.
-The fixed-size table uses about 1.5 MiB, allocated once when constructing the engine;
-searching and clearing it perform no allocations. `clear()` resets both histories,
-including the existing UCI clearing after each search.
+history. The continuation table uses about 1.5 MiB, allocated once when constructing
+the engine; searching and clearing it perform no allocations. `clear()` resets all
+histories, including the existing UCI clearing after each search.
+
+Capture history is a fixed `int16_t` table indexed by the colored attacker, target
+square, and captured piece type (about 16 KiB). It only breaks ties among tactical moves with the
+same SEE score, preserving SEE as the primary ordering criterion. A capture beta
+cutoff rewards that capture and penalizes previously searched captures at the node;
+quiet promotions do not update capture history. En passant is indexed as a pawn
+capture. Its gravity updates use the same bounded depth bonus as quiet history,
+and `clear()` resets the table along with the other search histories.
 
 ## Selective search
 
