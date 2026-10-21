@@ -213,7 +213,7 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
 
     const score_t static_eval = in_check ? score_t{DRAW} : evaluate();
     if (!PV && !in_check && depth <= 7 && !beta.decisive() &&
-        static_eval - 80 * depth >= beta)
+        static_eval - 60 * depth >= beta)
         return static_eval;
 
     // Null Move Pruning
