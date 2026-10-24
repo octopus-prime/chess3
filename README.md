@@ -283,6 +283,9 @@ searched that deeply; quiet sacrifices and zugzwang remain potential weaknesses.
   than repeatedly running SEE: `16 * victim + promotion - attacker`, using
   material values and counting the captured pawn for en passant. This shared
   ordering score is not a static evaluation or an exchange-safety test.
+  Scores are computed once per move. AVX-512 insertion sorts the first up to
+  16 scored moves; scalar insertion sort inserts all remaining moves into the
+  sorted prefix. Equal scores retain their input order.
   In check, every legal evasion is retained.
 - Mate-distance bounds constrain non-root nodes. TT bounds cause direct cutoffs
   only at Non-PV nodes rather than narrowing a PV window. Aspiration starts at

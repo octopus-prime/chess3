@@ -1,4 +1,5 @@
 #include <array>
+#include <bit>
 #include <chrono>
 #include <cstdint>
 #include <iostream>
@@ -132,6 +133,61 @@ bool test_static_eval_cache() {
     passed &= test_support::check(correct && after == before,
                                   "filling, probing and clearing the entire eval cache allocates nothing");
     return passed;
+}
+
+bool test_scored_move_sorting() {
+    using namespace chess;
+    constexpr std::array promotions{NO_TYPE, N, B, R, Q};
+    uint32_t random = 0x12345678;
+    for (size_t count = 0; count <= 256; ++count) {
+        for (int pattern = 0; pattern < 8; ++pattern) {
+            std::array<scored_move_t, 258> actual;
+            for (size_t i = 0; i < actual.size(); ++i) {
+                random ^= random << 13;
+                random ^= random >> 17;
+                random ^= random << 5;
+                int score{};
+                switch (pattern) {
+                    case 0: score = static_cast<int>(i); break;
+                    case 1: score = -static_cast<int>(i); break;
+                    case 2: score = 0; break;
+                    case 3: score = static_cast<int>(random % 7) - 3; break;
+                    case 4:
+                        score = i % 2 ? std::numeric_limits<int>::max()
+                                      : std::numeric_limits<int>::min();
+                        break;
+                    case 5: score = std::numeric_limits<int>::min(); break;
+                    case 6: score = std::numeric_limits<int>::max(); break;
+                    default: score = std::bit_cast<int>(random); break;
+                }
+                actual[i] = {
+                    move_t{square_e(i % 64), square_e((i / 64 + 17) % 64),
+                           promotions[i % promotions.size()]},
+                    score
+                };
+            }
+            auto expected = actual;
+            const auto reference = std::span{expected}.subspan(1, count);
+            std::stable_sort(reference.begin(), reference.end(),
+                             [](const scored_move_t& a, const scored_move_t& b) {
+                                 return a.score > b.score;
+                             });
+            const auto before = test_allocation_count();
+            sort_scored_moves(std::span{actual}.subspan(1, count));
+            const auto after = test_allocation_count();
+            if (!test_support::check(after == before, "scored move sorting allocates nothing"))
+                return false;
+            if (!test_support::check(
+                    std::ranges::equal(actual, expected, [](const scored_move_t& a, const scored_move_t& b) {
+                        return a.move == b.move && a.score == b.score;
+                    }),
+                    "SIMD prefix and scalar tail match stable sorting without touching surrounding moves")) {
+                std::cerr << "Move count: " << count << ", score pattern: " << pattern << '\n';
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 bool test_move_ordering(const bool with_continuation = false) {
@@ -546,6 +602,7 @@ bool run_mate_tests() {
 bool run_engine_tests() {
     bool passed = test_tt_mate_scores();
     passed &= test_static_eval_cache();
+    passed &= test_scored_move_sorting();
     passed &= test_move_ordering();
     passed &= test_move_ordering(true);
     passed &= test_continuation_history();
@@ -557,6 +614,14 @@ bool run_engine_tests() {
     passed &= test_search_draws();
     passed &= test_selective_search();
     passed &= test_search_timeout();
+    {
+        constexpr std::string_view fen{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"};
+        chess::engine_t search{fen};
+        chess::evaluator_t evaluator;
+        const auto expected = evaluator.evaluate(chess::position_t{fen});
+        passed &= test_support::check(test_search(search, 0) == expected && search.nodes() == 1,
+                                      "quiescence with no tactical moves never searches unused scored-buffer entries");
+    }
     {
         chess::engine_t search{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"};
         for (const size_t limit : {size_t{1}, size_t{200}}) {

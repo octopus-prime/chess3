@@ -15,6 +15,14 @@ import engine.history;
 
 export namespace chess {
 
+struct scored_move_t {
+    move_t move;
+    int score;
+};
+
+// Sort descending by score, preserving the input order of ties.
+void sort_scored_moves(std::span<scored_move_t> moves) noexcept;
+
 auto ordered_moves(const position_t& position, const std::span<move_t> moves, const move_t best_move, const std::span<const move_t, 2> killer_moves, const history_t& history, const history_t* continuation = nullptr) noexcept {
     const auto create = [&position, moves, best_move, killer_moves, &history, continuation, count = size_t{}](const int phase) mutable -> std::span<move_t> {
         const auto remaining = moves.subspan(count, moves.size() - count);
