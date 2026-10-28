@@ -36,7 +36,7 @@ constexpr uint32_t attack_counts[] = {0, 84, 336, 560, 896, 1456};
 constexpr uint32_t attack_offsets[] = {0, 0, 336, 3696, 8176, 15344};
 
 uint8_t orientation(const square_t king, const side_t perspective) noexcept {
-    return (king.file() < e ? 0 : 7) ^ (56 * perspective);
+    return (king.file() < e ? 7 : 0) ^ (56 * perspective);
 }
 
 squares_t attacks(const type_t type, const square_t from, const squares_t occupied,
@@ -151,15 +151,14 @@ void activate(const int32_t (&input)[32], uint8_t* output, const int shift) noex
 }
 
 uint32_t make_index(const square_t king, const square_t square, const piece_t piece,
-                    const side_t perspective, const bool opponent_has_queen) noexcept {
+                    const side_t perspective, const size_t psq_block) noexcept {
     const auto relative_king = uint8_t(king) ^ (56 * perspective);
     const uint32_t bucket = (7 - relative_king / 8) * 4 +
         std::min(relative_king % 8, 7 - relative_king % 8);
     const uint32_t piece_offset = piece.type() == K ? 640 :
         128 * (piece.type() - P) + 64 * (piece.side() != perspective);
-    // K32Q2 mirrors horizontally in the opposite direction to threats and pawn pairs.
-    return PSQ_OFFSET + (uint32_t(square) ^ (bucket * 1408 +
-        704 * opponent_has_queen + piece_offset + (orientation(king, perspective) ^ 7)));
+    return PSQ_OFFSET + psq_block * PSQ_BLOCK_DIMENSIONS +
+        (uint32_t(square) ^ (bucket * 704 + piece_offset + orientation(king, perspective)));
 }
 
 uint32_t threat_index(const square_t king, const square_t from, const square_t to,
@@ -196,12 +195,18 @@ std::array<std::span<uint32_t>, 2> active_features(
     std::array<size_t, 2> counts{};
     const square_t kings[] = {position.by(WHITE, K).front(), position.by(BLACK, K).front()};
     const bool queens[] = {!position.by(WHITE, Q).empty(), !position.by(BLACK, Q).empty()};
+    const bool any_heavy_pieces = !position.by(R).empty() || !position.by(Q).empty();
+    const size_t psq_blocks[] = {
+        queens[BLACK] ? size_t{2} : any_heavy_pieces ? size_t{1} : size_t{0},
+        queens[WHITE] ? size_t{2} : any_heavy_pieces ? size_t{1} : size_t{0}
+    };
     const auto occupied = position.by();
     assert(occupied.size() <= 32 && position.by(P).size() <= 16);
     for (const square_t from : occupied) {
         const auto piece = position.at(from);
         for (const side_t side : {WHITE, BLACK})
-            buffers[side][counts[side]++] = make_index(kings[side], from, piece, side, queens[~side]);
+            buffers[side][counts[side]++] =
+                make_index(kings[side], from, piece, side, psq_blocks[side]);
         if (piece.type() == K)
             continue;
         for (const square_t to : attacks(piece.type(), from, occupied, piece.side()) & occupied) {
@@ -235,14 +240,14 @@ nnue_t::nnue_t(const std::string_view filename) {
     if (!stream)
         throw std::runtime_error{"unable to open NNUE network: " + std::string{filename}};
     if (read_integer<uint32_t>(stream) != 0x6A448AFA ||
-        read_integer<uint32_t>(stream) != 0xE5CD8C39)
+        read_integer<uint32_t>(stream) != 0xC0357A83)
         throw std::runtime_error{"unsupported NNUE network format: " + std::string{filename}};
     const auto description_size = read_integer<uint32_t>(stream);
     if (description_size > 4096)
         throw std::runtime_error{"invalid NNUE network description length"};
     std::array<char, 4096> description;
     read_bytes(stream, description.data(), description_size);
-    if (read_integer<uint32_t>(stream) != 0x86FEFD2F)
+    if (read_integer<uint32_t>(stream) != 0xA3060B95)
         throw std::runtime_error{"unsupported NNUE feature transformer"};
     read_bytes(stream, feature_layer.biases, sizeof(feature_layer.biases));
     read_bytes(stream, feature_layer.weights, sizeof(feature_layer.weights));

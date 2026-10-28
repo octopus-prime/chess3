@@ -46,7 +46,7 @@ def main():
     if not runner:
         parser.error("fastchess is not on PATH")
     engine_dir = args.engine_dir.resolve(strict=True)
-    network = engine_dir.parent / "nn-c9e480e92425.nnue"
+    network = engine_dir.parent / "nn-d1ee674a62ca.nnue"
     if not network.is_file():
         parser.error(f"missing network: {network}")
     for path in (args.baseline, args.candidate, args.openings):

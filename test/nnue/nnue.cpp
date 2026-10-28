@@ -69,7 +69,7 @@ bool test_network_errors() {
     bool passed = expect_error("unable to open");
     {
         std::ofstream stream{path, std::ios::binary};
-        const std::array<uint32_t, 4> header{0x6A448AFA, 0xE5CD8C39, 0, 0x86FEFD2F};
+        const std::array<uint32_t, 4> header{0x6A448AFA, 0xC0357A83, 0, 0xA3060B95};
         stream.write(reinterpret_cast<const char*>(header.data()), sizeof(header));
         if (!stream)
             throw std::runtime_error{"unable to write NNUE loader test fixture"};
@@ -83,7 +83,7 @@ bool test_network_errors() {
             throw std::runtime_error{"unable to write NNUE loader test fixture"};
     }
     passed &= expect_error("unsupported NNUE network format");
-    std::filesystem::copy_file("../nn-c9e480e92425.nnue", path, std::filesystem::copy_options::overwrite_existing);
+    std::filesystem::copy_file("../nn-d1ee674a62ca.nnue", path, std::filesystem::copy_options::overwrite_existing);
     {
         std::ofstream stream{path, std::ios::binary | std::ios::app};
         stream.put('\0');
@@ -105,6 +105,7 @@ bool run_nnue_tests() {
     std::vector<uint32_t> removed;
     std::vector<uint32_t> added;
     std::array<bool, nnue::SLOTS> buckets{};
+    std::array<bool, 3> psq_blocks{};
     std::array<nnue::feature_buffer_t, 2> buffers;
     bool passed = true;
 
@@ -119,8 +120,12 @@ bool run_nnue_tests() {
             entry.feature_count = features.size();
             std::ranges::sort(features);
             std::ranges::copy(features, entry.features.begin());
+            const auto hash = feature_hash(features);
+            if (hash != test.feature_hashes[side])
+                std::cerr << test.fen << " side " << int(side) << ": feature hash "
+                          << hash << '\n';
             passed &= test_support::check(
-                feature_hash(features) == test.feature_hashes[side],
+                hash == test.feature_hashes[side],
                 "PSQ, threat, and pawn-pair feature indices match Stockfish");
             passed &= test_support::check(
                 std::ranges::adjacent_find(features) == features.end() &&
@@ -147,6 +152,8 @@ bool run_nnue_tests() {
         const bool their_queen = !position.by(~side, Q).empty();
         const size_t count = position.by().size();
         buckets[(count - 1) / 4 * 4 + 2 * our_queen + their_queen] = true;
+        const bool any_heavy_pieces = !position.by(R).empty() || !position.by(Q).empty();
+        psq_blocks[their_queen ? 2 : any_heavy_pieces ? 1 : 0] = true;
         const auto score = network->evaluate(fresh[side], fresh[~side], count,
                                              our_queen, their_queen);
         if (score != test.score)
@@ -158,6 +165,8 @@ bool run_nnue_tests() {
     }
     passed &= test_support::check(std::ranges::all_of(buckets, [](const bool covered) { return covered; }),
                                   "reference positions cover all 32 network stacks");
+    passed &= test_support::check(std::ranges::all_of(psq_blocks, [](const bool covered) { return covered; }),
+                                  "reference positions cover all three K32H3 blocks");
     passed &= test_paired_updates(*network);
     passed &= test_network_errors();
     return passed;

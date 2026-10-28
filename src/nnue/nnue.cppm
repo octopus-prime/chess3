@@ -18,7 +18,8 @@ export namespace chess::nnue {
 
 constexpr size_t THREAT_INPUTS = 59808;
 constexpr size_t PAIR_INPUTS = 4560;
-constexpr size_t PSQ_INPUTS = 45056;
+constexpr size_t PSQ_BLOCK_DIMENSIONS = 22528;
+constexpr size_t PSQ_INPUTS = 3 * PSQ_BLOCK_DIMENSIONS;
 constexpr size_t PSQ_OFFSET = THREAT_INPUTS + PAIR_INPUTS;
 constexpr size_t L0 = PSQ_OFFSET + PSQ_INPUTS;
 constexpr size_t L1 = 1024;
@@ -28,10 +29,10 @@ constexpr size_t SLOTS = 32;
 // At most 32 PSQs, 32 * 31 directed threats, and 16 * 15 / 2 pawn pairs.
 constexpr size_t MAX_ACTIVE = 32 + 32 * 31 + 16 * 15 / 2;
 using feature_buffer_t = std::array<uint32_t, MAX_ACTIVE>;
-constexpr std::string_view NETWORK_NAME = "nn-c9e480e92425.nnue";
+constexpr std::string_view NETWORK_NAME = "nn-d1ee674a62ca.nnue";
 
 uint32_t make_index(square_t king, square_t square, piece_t piece, side_t perspective,
-                    bool opponent_has_queen) noexcept;
+                    size_t psq_block) noexcept;
 uint32_t threat_index(square_t king, square_t from, square_t to, piece_t attacker,
                       piece_t target, side_t perspective) noexcept;
 uint32_t pair_index(square_t king, square_t from, square_t to, side_t color,
@@ -75,6 +76,6 @@ private:
     friend std::unique_ptr<nnue_t> load(std::string_view);
 };
 
-std::unique_ptr<nnue_t> load(std::string_view filename = "../nn-c9e480e92425.nnue");
+std::unique_ptr<nnue_t> load(std::string_view filename = "../nn-d1ee674a62ca.nnue");
 
 }

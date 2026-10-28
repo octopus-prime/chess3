@@ -399,28 +399,28 @@ Set `BUILD_TESTING=OFF` to omit all four test executables.
 ## NNUE network
 
 The evaluator uses the unmodified Stockfish network
-[`nn-c9e480e92425.nnue`](https://github.com/official-stockfish/networks/blob/master/nn-c9e480e92425.nnue),
-matching Stockfish revision `effdc3fd`. Its SHA-256 is
-`c9e480e92425f887df6ab9b05c6180fbd762b07879df9d9845f1aa75440caa73`.
+[`nn-d1ee674a62ca.nnue`](https://github.com/official-stockfish/networks/blob/master/nn-d1ee674a62ca.nnue),
+matching Stockfish's SFNNv19 update. Its SHA-256 is
+`d1ee674a62ca754648fb8c2907ff4e92f0c3acff28f59afa0f5bd4e3949538f1`.
 The implementation follows Stockfish's GPLv3 NNUE architecture while retaining
 this project's independent, refresh-based design.
 
 Before running `chess3` or Engine/NNUE tests, download
-[`nn-c9e480e92425.nnue`](https://raw.githubusercontent.com/official-stockfish/networks/master/nn-c9e480e92425.nnue)
+[`nn-d1ee674a62ca.nnue`](https://raw.githubusercontent.com/official-stockfish/networks/master/nn-d1ee674a62ca.nnue)
 and place it in the repository root, keeping its original filename.
 No extraction, renaming, or conversion is needed. The loader opens
-`../nn-c9e480e92425.nnue`, so run these executables from `build/`; CTest uses that directory.
-It reads the standard little-endian `.nnue` format directly and checks version,
-architecture/section hashes, truncation, and trailing data. The previous custom
-network format is no longer supported; no network conversion is needed.
+`../nn-d1ee674a62ca.nnue`, so run these executables from `build/`; CTest uses that directory.
+It reads the standard little-endian SFNNv19 `.nnue` format directly and checks
+version, architecture/section hashes, truncation, and trailing data. The previous
+custom network format is no longer supported; no network conversion is needed.
 
 There are three sparse input groups contributing to one 1024-element accumulator
 per perspective:
 
 - `FullThreats`: 59,808 attack/defence features, recomputed with current occupancy.
 - `PP_3Wide`: 4,560 pawn-pair features for pawns on the same or adjacent files.
-- `K32Q2`: 45,056 piece-square features conditioned on king bucket and opposing
-  queen presence.
+- `K32H3`: 67,584 piece-square features, split into three heavy-material blocks
+  and conditioned on king bucket and opposing queen presence.
 
 The evaluator keeps its per-color, per-king-square accumulator cache. Features
 for both perspectives are enumerated together, sharing attack and pawn-pair
