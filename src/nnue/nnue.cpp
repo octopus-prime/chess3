@@ -272,12 +272,21 @@ void nnue_t::update(entry_t& entry, const std::span<const uint32_t> removed,
         __m512i accumulation[registers];
         for (size_t i = 0; i < registers; ++i)
             accumulation[i] = _mm512_load_si512(entry.accumulation + base + i * 32);
-        for (const auto feature : removed)
+        const auto paired = std::min(removed.size(), added.size());
+        for (size_t index = 0; index < paired; ++index)
+            for (size_t i = 0; i < registers; ++i) {
+                const auto remove = _mm512_cvtepi8_epi16(_mm256_load_si256(
+                    reinterpret_cast<const __m256i*>(feature_layer.weights[removed[index]] + base + i * 32)));
+                const auto add = _mm512_cvtepi8_epi16(_mm256_load_si256(
+                    reinterpret_cast<const __m256i*>(feature_layer.weights[added[index]] + base + i * 32)));
+                accumulation[i] = _mm512_add_epi16(accumulation[i], _mm512_sub_epi16(add, remove));
+            }
+        for (const auto feature : removed.subspan(paired))
             for (size_t i = 0; i < registers; ++i)
                 accumulation[i] = _mm512_sub_epi16(accumulation[i],
                     _mm512_cvtepi8_epi16(_mm256_load_si256(
                         reinterpret_cast<const __m256i*>(feature_layer.weights[feature] + base + i * 32))));
-        for (const auto feature : added)
+        for (const auto feature : added.subspan(paired))
             for (size_t i = 0; i < registers; ++i)
                 accumulation[i] = _mm512_add_epi16(accumulation[i],
                     _mm512_cvtepi8_epi16(_mm256_load_si256(

@@ -221,9 +221,21 @@ both killers in priority order, quiet moves sorted by history, and remaining
 tactical moves sorted by SEE. Each phase
 only processes the unconsumed suffix. A cutoff skips later phases. Missing or
 already-consumed TT/killer moves are ignored; every legal move is visited once.
-The production ordering overload uses `position_t::see(move)` for tactical
-partitioning and sorting. The projection-based overload lets tests supply
-custom scores.
+The production `sorter_t` caches SEE scores in a fixed-size scored-move buffer
+and uses `sort_scored_moves` for tactical and quiet phases, computing combined
+history scores when the quiet phase is reached. Only slots corresponding to
+supplied moves participate. The lazy view borrows the sorter, so the sorter
+must remain alive throughout iteration; calling it on a temporary is disallowed.
+`ordered_moves` retains the projection-based reference implementation.
+`scored_move_t` packs a 16-bit move and signed 16-bit score into four bytes.
+Its sorter uses separate AVX-512 registers for 32 signed scores and 32 moves,
+requiring AVX-512BW, and preserves
+ties without using move bits as a secondary key. Combined history is saturated
+to the signed 16-bit range (the possible +32768 becomes +32767).
+The original eight-byte `scored_move32_t` and its `sort_scored_moves` overload
+remain available for full signed 32-bit scores. Scalar insertion handles moves
+after the first 32 in the compact variant, or 16 in the 32-bit-score variant.
+Neither variant allocates.
 
 Quiet moves in the fourth phase use [engine.history](src/engine/history.cppm), a zero-initialized
 `int16_t` piece-to table indexed by colored piece and destination square. Remaining
@@ -283,6 +295,9 @@ searched that deeply; quiet sacrifices and zugzwang remain potential weaknesses.
   than repeatedly running SEE: `16 * victim + promotion - attacker`, using
   material values and counting the captured pawn for en passant. This shared
   ordering score is not a static evaluation or an exchange-safety test.
+  Scores are computed once per move. AVX-512 insertion sorts the first up to
+  16 scored moves; scalar insertion sort inserts all remaining moves into the
+  sorted prefix. Equal scores retain their input order.
   In check, every legal evasion is retained.
 - Mate-distance bounds constrain non-root nodes. TT bounds cause direct cutoffs
   only at Non-PV nodes rather than narrowing a PV window. Aspiration starts at
@@ -418,7 +433,9 @@ Feature and delta buffers have a conservative legal-position bound of 1,144
 indices (32 PSQs, at most 32 * 31 directed threats, and 120 pawn pairs).
 Evaluation performs no heap allocations, including the first visit to any king
 cache entry; only evaluator construction allocates the network and cache.
-Accumulator updates stream weight rows in SIMD register tiles. This includes
+Accumulator updates stream weight rows in SIMD register tiles, combining paired
+additions and removals into weight differences before updating the accumulator.
+Unpaired rows are applied separately. This includes
 remote slider threats, pawn pairs, and queen-plane changes. There are no
 dirty-piece/dirty-threat records, accumulator stacks, or changes to move execution.
 

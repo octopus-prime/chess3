@@ -213,7 +213,7 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
 
     const score_t static_eval = in_check ? score_t{DRAW} : evaluate();
     if (!PV && !in_check && depth <= 7 && !beta.decisive() &&
-        static_eval - 80 * depth >= beta)
+        static_eval - 120 * depth >= beta)
         return static_eval;
 
     // Null Move Pruning
@@ -235,13 +235,15 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
     const auto previous_move = _position.last_move();
     history_t* continuation = previous_move == move_t{} ? nullptr :
         &_continuation.get(_position.at(previous_move.to()), previous_move.to());
-    auto ordered = ordered_moves(_position, moves, best_move, killers, _history, continuation);
+    sorter_t sorter{_position, moves, best_move, killers, _history, continuation};
+    auto ordered = sorter();
 
     size_t move_count = 0;
     size_t quiet_count = 0;
     std::array<move_t, 256> searched_quiets;
     size_t quiets_searched = 0;
-    for (const move_t& move : ordered) {
+    for (const scored_move_t& sm : ordered) {
+        const move_t& move = sm.move;
         const bool is_tactical = _position.tactical(move);
         const int history_score = _history.score(_position.at(move.from()), move.to(), continuation);
         const bool advanced_pawn = _position.at(move.from()).type() == P &&
@@ -355,24 +357,41 @@ score_t engine_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     if (in_check && moves.empty())
         return score_e(MIN + height);
 
-    if (!in_check) {
-        auto tail = std::ranges::partition(moves, [&](const move_t& move) {
-            if (move.promotion() != NO_TYPE)
-                return true;
-            const int gain = _position.at(move.to()).type() == NO_TYPE
-                ? PAWN : int(score_t{_position.at(move.to()).type()});
-            if ((!alpha.decisive() && stand_pat + gain + 150 < alpha) || _position.see(move) < 0)
-                return _position.check(move);
-            return true;
-        });
-        moves = moves.first(tail.begin() - moves.begin());
+    std::array<scored_move_t, 256> scored_buffer;
+    std::span<scored_move_t> scored_moves{scored_buffer.data(), moves.size()};
+    for (size_t i = 0; i < moves.size(); ++i) {
+        scored_moves[i].move = moves[i];
+        scored_moves[i].score = _position.see(moves[i]);
     }
 
-    std::ranges::sort(moves, std::greater<>(), [&](const move_t& move) {
-        return _position.mvv_lva(move);
-    });
+    // if (!in_check) {
+    //     auto tail = std::ranges::partition(moves, [&](const move_t& move) {
+    //         if (move.promotion() != NO_TYPE)
+    //             return true;
+    //         const int gain = _position.at(move.to()).type() == NO_TYPE
+    //             ? PAWN : int(score_t{_position.at(move.to()).type()});
+    //         if ((!alpha.decisive() && stand_pat + gain + 150 < alpha) || _position.see(move) < 0)
+    //             return _position.check(move);
+    //         return true;
+    //     });
+    //     moves = moves.first(tail.begin() - moves.begin());
+    // }
 
-    for (const move_t& move : moves) {
+    if (!in_check) {
+        auto tail = std::ranges::partition(scored_moves, [&](const scored_move_t& scored_move) {
+            if (scored_move.move.promotion() != NO_TYPE)
+                return true;
+            if ((!alpha.decisive() && stand_pat + scored_move.score + 150 < alpha) || scored_move.score < 0)
+                return _position.check(scored_move.move);
+            return true;
+        });
+        scored_moves = scored_moves.first(tail.begin() - scored_moves.begin());
+    }
+ 
+    sort_scored_moves(scored_moves);
+
+    for (const auto& scored_move : scored_moves) {
+        const move_t move = scored_move.move;
         _position.do_move(move);
         const score_t score = -qsearch(height + 1, -beta, -alpha);
         _position.undo_move(move);
