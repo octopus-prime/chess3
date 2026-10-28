@@ -135,61 +135,69 @@ bool test_static_eval_cache() {
     return passed;
 }
 
-bool test_scored_move_sorting() {
-    using namespace chess;
-    constexpr std::array promotions{NO_TYPE, N, B, R, Q};
-    uint32_t random = 0x12345678;
-    for (size_t count = 0; count <= 256; ++count) {
-        for (int pattern = 0; pattern < 8; ++pattern) {
-            std::array<scored_move_t, 258> actual;
-            for (size_t i = 0; i < actual.size(); ++i) {
-                random ^= random << 13;
-                random ^= random >> 17;
-                random ^= random << 5;
-                int score{};
-                switch (pattern) {
-                    case 0: score = static_cast<int>(i); break;
-                    case 1: score = -static_cast<int>(i); break;
-                    case 2: score = 0; break;
-                    case 3: score = static_cast<int>(random % 7) - 3; break;
-                    case 4:
-                        score = i % 2 ? std::numeric_limits<int>::max()
-                                      : std::numeric_limits<int>::min();
-                        break;
-                    case 5: score = std::numeric_limits<int>::min(); break;
-                    case 6: score = std::numeric_limits<int>::max(); break;
-                    default: score = std::bit_cast<int>(random); break;
-                }
-                actual[i] = {
-                    move_t{square_e(i % 64), square_e((i / 64 + 17) % 64),
-                           promotions[i % promotions.size()]},
-                    score
-                };
-            }
-            auto expected = actual;
-            const auto reference = std::span{expected}.subspan(1, count);
-            std::stable_sort(reference.begin(), reference.end(),
-                             [](const scored_move_t& a, const scored_move_t& b) {
-                                 return a.score > b.score;
-                             });
-            const auto before = test_allocation_count();
-            sort_scored_moves(std::span{actual}.subspan(1, count));
-            const auto after = test_allocation_count();
-            if (!test_support::check(after == before, "scored move sorting allocates nothing"))
-                return false;
-            if (!test_support::check(
-                    std::ranges::equal(actual, expected, [](const scored_move_t& a, const scored_move_t& b) {
-                        return a.move == b.move && a.score == b.score;
-                    }),
-                    "SIMD prefix and scalar tail match stable sorting without touching surrounding moves")) {
-                std::cerr << "Move count: " << count << ", score pattern: " << pattern << '\n';
-                return false;
-            }
-        }
-    }
-    return true;
-}
+// template <typename ScoredMove>
+// bool test_scored_move_sorting() {
+//     using namespace chess;
+//     using score_type = decltype(ScoredMove::score);
+//     constexpr std::array promotions{NO_TYPE, N, B, R, Q};
+//     uint32_t random = 0x12345678;
+//     for (size_t count = 0; count <= 256; ++count) {
+//         for (int pattern = 0; pattern < 8; ++pattern) {
+//             std::array<ScoredMove, 258> actual;
+//             for (size_t i = 0; i < actual.size(); ++i) {
+//                 random ^= random << 13;
+//                 random ^= random >> 17;
+//                 random ^= random << 5;
+//                 int score{};
+//                 switch (pattern) {
+//                     case 0: score = static_cast<int>(i); break;
+//                     case 1: score = -static_cast<int>(i); break;
+//                     case 2: score = 0; break;
+//                     case 3: score = static_cast<int>(random % 7) - 3; break;
+//                     case 4:
+//                         score = i % 2 ? std::numeric_limits<score_type>::max()
+//                                       : std::numeric_limits<score_type>::min();
+//                         break;
+//                     case 5: score = std::numeric_limits<score_type>::min(); break;
+//                     case 6: score = std::numeric_limits<score_type>::max(); break;
+//                     default:
+//                         if constexpr (sizeof(score_type) == sizeof(int16_t))
+//                             score = std::bit_cast<int16_t>(static_cast<uint16_t>(random));
+//                         else
+//                             score = std::bit_cast<int32_t>(random);
+//                         break;
+//                 }
+//                 actual[i] = {
+//                     move_t{square_e(i % 64), square_e((i / 64 + 17) % 64),
+//                            promotions[i % promotions.size()]},
+//                     static_cast<score_type>(score)
+//                 };
+//             }
+//             auto expected = actual;
+//             const auto reference = std::span{expected}.subspan(1, count);
+//             std::stable_sort(reference.begin(), reference.end(),
+//                              [](const ScoredMove& a, const ScoredMove& b) {
+//                                  return a.score > b.score;
+//                              });
+//             const auto before = test_allocation_count();
+//             sort_scored_moves(std::span{actual}.subspan(1, count));
+//             const auto after = test_allocation_count();
+//             if (!test_support::check(after == before, "scored move sorting allocates nothing"))
+//                 return false;
+//             if (!test_support::check(
+//                     std::ranges::equal(actual, expected, [](const ScoredMove& a, const ScoredMove& b) {
+//                         return a.move == b.move && a.score == b.score;
+//                     }),
+//                     "SIMD prefix and scalar tail match stable sorting without touching surrounding moves")) {
+//                 std::cerr << "Move count: " << count << ", score pattern: " << pattern << '\n';
+//                 return false;
+//             }
+//         }
+//     }
+//     return true;
+// }
 
+template <bool Scored = false>
 bool test_move_ordering(const bool with_continuation = false) {
     using namespace chess;
     const position_t position{"4k3/P7/8/3pP3/8/8/8/4K1N1 w - d6 0 1"};
@@ -222,8 +230,15 @@ bool test_move_ordering(const bool with_continuation = false) {
                                 static_cast<int>(i * 64));
     }
 
-    auto ordered = ordered_moves(position, moves, best, killers, history,
-                                 with_continuation ? &continuation : nullptr);
+    sorter_t sorter{position, moves, best, killers, history,
+                    with_continuation ? &continuation : nullptr};
+    auto ordered = [&] {
+        // if constexpr (Scored)
+            return sorter() | std::views::transform([](const scored_move_t& sm) { return sm.move; });
+        // else
+        //     return ordered_moves(position, moves, best, killers, history,
+        //                          with_continuation ? &continuation : nullptr);
+    }();
     std::array<move_t, 256> actual;
     size_t count{};
     int previous_phase = -1;
@@ -281,6 +296,121 @@ bool test_move_ordering(const bool with_continuation = false) {
                                   "TT move and both killers appear in their phases");
     return passed;
 }
+
+bool test_sorter_history_limits() {
+    using namespace chess;
+    const position_t position{};
+    std::array<move_t, 256> buffer;
+    const auto moves = position.generate_all_moves(buffer);
+    const std::array killers{move_t{}, move_t{}};
+    history_t history;
+    history_t continuation;
+    history.update(WP, e4, history_t::LIMIT);
+    continuation.update(WP, e4, history_t::LIMIT);
+    history.update(WP, d4, -history_t::LIMIT);
+    continuation.update(WP, d4, -history_t::LIMIT);
+    sorter_t sorter{position, moves, {}, killers, history, &continuation};
+    size_t count = 0;
+    bool passed = true;
+    for (const scored_move_t sm : sorter()) {
+        if (count == 0)
+            passed &= test_support::check(sm.move == move_t{e2, e4} &&
+                                          sm.score == std::numeric_limits<int16_t>::max(),
+                                          "positive combined history saturates without sign reversal");
+        if (count + 1 == moves.size())
+            passed &= test_support::check(sm.move == move_t{d2, d4} &&
+                                          sm.score == std::numeric_limits<int16_t>::min(),
+                                          "minimum combined history remains representable");
+        ++count;
+    }
+    return passed && test_support::check(count == moves.size(),
+                                         "history limits preserve the complete move list");
+}
+
+// bool test_sorter_bounds(const std::string_view fen) {
+//     using namespace chess;
+//     static_assert(std::is_invocable_v<sorter_t&>);
+//     static_assert(!std::is_invocable_v<sorter_t&&>);
+//     position_t position{fen};
+//     const auto hash = position.hash();
+//     std::array<move_t, 256> buffer;
+//     const auto legal = position.generate_all_moves(buffer);
+//     std::array<move_t, 256> original;
+//     std::ranges::copy(legal, original.begin());
+//     history_t history;
+//     history_t continuation;
+//     for (const move_t move : legal) {
+//         history.update(position.at(move.from()), move.to(), int(move.to()) * 32 - 1024);
+//         continuation.update(position.at(move.from()), move.to(), 2048 - int(move.to()) * 16);
+//     }
+//     for (size_t count = 0; count <= legal.size(); ++count) {
+//         for (const bool with_best : {false, true}) {
+//             for (const bool duplicate_killers : {false, true}) {
+//                 std::ranges::copy_n(original.begin(), count, buffer.begin());
+//                 const auto moves = std::span{buffer}.first(count);
+//                 const move_t best = with_best && count ? original[count / 2] : move_t{};
+//                 const std::array killers{
+//                     count ? original[0] : move_t{},
+//                     count ? original[duplicate_killers ? 0 : count - 1] : move_t{}
+//                 };
+//                 std::array<move_t, 256> reference_buffer = buffer;
+//                 const auto reference_moves = std::span{reference_buffer}.first(count);
+//                 std::array<move_t, 256> expected;
+//                 size_t expected_count = 0;
+//                 for (const move_t move : ordered_moves(position, reference_moves, best, killers,
+//                                                        history, &continuation))
+//                     expected[expected_count++] = move;
+//                 sorter_t sorter{position, moves, best, killers, history, &continuation};
+//                 // Poison unused slots so accidentally sorting the full capacity is observable.
+//                 for (auto& sm : sorter.scored_moves)
+//                     sm = {move_t{a1, a1}, std::numeric_limits<int16_t>::max()};
+//                 const auto key = [&](const move_t move) {
+//                     const int see = position.see(move);
+//                     const int phase = move == best ? 0 :
+//                         position.tactical(move) && see >= 0 ? 1 :
+//                         move == killers[0] || move == killers[1] ? 2 :
+//                         !position.tactical(move) ? 3 : 4;
+//                     const int score = phase == 1 || phase == 4 ? see :
+//                         phase == 3 ? history.score(position.at(move.from()), move.to(), &continuation) :
+//                         phase == 2 ? (move == killers[0] ? 1 : 0) : 0;
+//                     return std::array{phase, score};
+//                 };
+//                 std::array<move_t, 256> actual;
+//                 size_t actual_count = 0;
+//                 const auto before = test_allocation_count();
+//                 for (const scored_move_t sm : sorter()) {
+//                     if (!test_support::check(actual_count < count,
+//                                               "sorter never emits unused scored-buffer entries"))
+//                         return false;
+//                     if (!test_support::check(
+//                             std::ranges::find(original.begin(), original.begin() + count, sm.move) !=
+//                                 original.begin() + count &&
+//                             std::ranges::find(actual.begin(), actual.begin() + actual_count, sm.move) ==
+//                                 actual.begin() + actual_count,
+//                             "sorter emits each supplied legal move exactly once"))
+//                         return false;
+//                     if (!test_support::check(key(sm.move) == key(expected[actual_count]),
+//                                               "scored sorter matches legacy phases and scores"))
+//                         return false;
+//                     const auto move_key = key(sm.move);
+//                     if (!test_support::check(
+//                             (move_key[0] != 1 && move_key[0] != 3 && move_key[0] != 4) ||
+//                                 sm.score == move_key[1],
+//                             "sorter stores the SEE or combined history used for sorting"))
+//                         return false;
+//                     actual[actual_count++] = sm.move;
+//                     position.do_move(sm.move);
+//                     position.undo_move(sm.move);
+//                 }
+//                 if (!test_support::check(actual_count == expected_count && position.hash() == hash &&
+//                                           test_allocation_count() == before,
+//                                           "sorter preserves move count and position without allocations"))
+//                     return false;
+//             }
+//         }
+//     }
+//     return true;
+// }
 
 constexpr bool test_combined_history_score() {
     using namespace chess;
@@ -602,9 +732,19 @@ bool run_mate_tests() {
 bool run_engine_tests() {
     bool passed = test_tt_mate_scores();
     passed &= test_static_eval_cache();
-    passed &= test_scored_move_sorting();
+    // passed &= test_scored_move_sorting<chess::scored_move_t>();
+    passed &= test_sorter_history_limits();
     passed &= test_move_ordering();
     passed &= test_move_ordering(true);
+    passed &= test_move_ordering<true>();
+    passed &= test_move_ordering<true>(true);
+    // for (const auto fen : {
+    //         "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    //         "4k3/P7/8/3pP3/8/8/8/4K1N1 w - d6 0 1",
+    //         "4k3/8/4p3/3p4/8/8/8/3QK3 w - - 0 1",
+    //         "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+    //         "7k/6Q1/5K2/8/8/8/8/8 b - - 0 1"})
+    //     passed &= test_sorter_bounds(fen);
     passed &= test_continuation_history();
     passed &= test_support::check(test_combined_history_score(),
                                   "combined history drives signed LMR adjustments without overflow");

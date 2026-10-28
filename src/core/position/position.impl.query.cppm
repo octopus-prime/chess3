@@ -88,7 +88,7 @@ constexpr bool position_t::fifty_move_rule() const noexcept {
 }
 
 constexpr bool position_t::threefold_repetition() const noexcept {
-    return _repetition >= 2;
+    return _repetition >= 3;
 }
 
 constexpr uint8_t position_t::repetition() const noexcept {

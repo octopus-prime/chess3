@@ -213,7 +213,7 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
 
     const score_t static_eval = in_check ? score_t{DRAW} : evaluate();
     if (!PV && !in_check && depth <= 7 && !beta.decisive() &&
-        static_eval - 80 * depth >= beta)
+        static_eval - 120 * depth >= beta)
         return static_eval;
 
     // Null Move Pruning
@@ -235,13 +235,15 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
     const auto previous_move = _position.last_move();
     history_t* continuation = previous_move == move_t{} ? nullptr :
         &_continuation.get(_position.at(previous_move.to()), previous_move.to());
-    auto ordered = ordered_moves(_position, moves, best_move, killers, _history, continuation);
+    sorter_t sorter{_position, moves, best_move, killers, _history, continuation};
+    auto ordered = sorter();
 
     size_t move_count = 0;
     size_t quiet_count = 0;
     std::array<move_t, 256> searched_quiets;
     size_t quiets_searched = 0;
-    for (const move_t& move : ordered) {
+    for (const scored_move_t& sm : ordered) {
+        const move_t& move = sm.move;
         const bool is_tactical = _position.tactical(move);
         const int history_score = _history.score(_position.at(move.from()), move.to(), continuation);
         const bool advanced_pawn = _position.at(move.from()).type() == P &&

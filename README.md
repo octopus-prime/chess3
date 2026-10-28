@@ -221,9 +221,21 @@ both killers in priority order, quiet moves sorted by history, and remaining
 tactical moves sorted by SEE. Each phase
 only processes the unconsumed suffix. A cutoff skips later phases. Missing or
 already-consumed TT/killer moves are ignored; every legal move is visited once.
-The production ordering overload uses `position_t::see(move)` for tactical
-partitioning and sorting. The projection-based overload lets tests supply
-custom scores.
+The production `sorter_t` caches SEE scores in a fixed-size scored-move buffer
+and uses `sort_scored_moves` for tactical and quiet phases, computing combined
+history scores when the quiet phase is reached. Only slots corresponding to
+supplied moves participate. The lazy view borrows the sorter, so the sorter
+must remain alive throughout iteration; calling it on a temporary is disallowed.
+`ordered_moves` retains the projection-based reference implementation.
+`scored_move_t` packs a 16-bit move and signed 16-bit score into four bytes.
+Its sorter uses separate AVX-512 registers for 32 signed scores and 32 moves,
+requiring AVX-512BW, and preserves
+ties without using move bits as a secondary key. Combined history is saturated
+to the signed 16-bit range (the possible +32768 becomes +32767).
+The original eight-byte `scored_move32_t` and its `sort_scored_moves` overload
+remain available for full signed 32-bit scores. Scalar insertion handles moves
+after the first 32 in the compact variant, or 16 in the 32-bit-score variant.
+Neither variant allocates.
 
 Quiet moves in the fourth phase use [engine.history](src/engine/history.cppm), a zero-initialized
 `int16_t` piece-to table indexed by colored piece and destination square. Remaining
