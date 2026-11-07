@@ -255,6 +255,125 @@ std::array<std::span<uint32_t>, 2> active_features(
             std::span{buffers[BLACK]}.first(counts[BLACK])};
 }
 
+feature_state_t::feature_state_t(const position_t& position) noexcept
+    : occupied(position.by()),
+      kings{position.by(WHITE, K).front(), position.by(BLACK, K).front()} {
+    for (const square_t square : occupied) {
+        pieces[square] = position.at(square);
+        by_type[pieces[square].type()].set(square);
+    }
+    const bool heavy = !(by_type[R] | by_type[Q]).empty();
+    for (const side_t side : {WHITE, BLACK})
+        blocks[side] = !position.by(~side, Q).empty() ? 2 : heavy ? 1 : 0;
+}
+
+bool compatible(const feature_state_t& before, const feature_state_t& after,
+                const side_t perspective) noexcept {
+    return before.kings[perspective] == after.kings[perspective] &&
+        before.blocks[perspective] == after.blocks[perspective];
+}
+
+std::array<std::array<std::span<uint32_t>, 2>, 2> changed_features(
+    const feature_state_t& before, const feature_state_t& after,
+    const std::span<feature_buffer_t, 2> removed,
+    const std::span<feature_buffer_t, 2> added) noexcept {
+    const bool incremental[] = {compatible(before, after, WHITE), compatible(before, after, BLACK)};
+    squares_t changed;
+    for (const square_t square : before.occupied | after.occupied)
+        if (before.pieces[square] != after.pieces[square])
+            changed.set(square);
+
+    std::array<size_t, 2> removed_count{};
+    std::array<size_t, 2> added_count{};
+    for (const square_t square : changed) {
+        for (const side_t side : {WHITE, BLACK}) {
+            if (!incremental[side])
+                continue;
+            if (before.pieces[square] != NO_PIECE)
+                removed[side][removed_count[side]++] = make_index(
+                    after.kings[side], square, before.pieces[square], side, before.blocks[side]);
+            if (after.pieces[square] != NO_PIECE)
+                added[side][added_count[side]++] = make_index(
+                    after.kings[side], square, after.pieces[square], side, after.blocks[side]);
+        }
+    }
+
+    // Blocker and target changes can affect stationary attackers, including x-rays.
+    using namespace attacks::lookup;
+    const auto rooks = before.by_type[R] | after.by_type[R] |
+        before.by_type[Q] | after.by_type[Q];
+    const auto bishops = before.by_type[B] | after.by_type[B] |
+        before.by_type[Q] | after.by_type[Q];
+    const auto knights = before.by_type[N] | after.by_type[N];
+    const auto pawns = before.by_type[P] | after.by_type[P];
+    auto affected = changed;
+    for (const square_t square : changed) {
+        affected |= rook(square, {}) & rooks;
+        affected |= bishop(square, {}) & bishops;
+        affected |= knight(square) & knights;
+        affected |= (pawn(square, WHITE) | pawn(square, BLACK)) & pawns;
+    }
+    for (const square_t from : affected) {
+        const auto old_piece = before.pieces[from];
+        const auto new_piece = after.pieces[from];
+        const auto old_targets = attacks(old_piece.type(), from, before.occupied,
+                                         old_piece.side()) & before.occupied;
+        const auto new_targets = attacks(new_piece.type(), from, after.occupied,
+                                         new_piece.side()) & after.occupied;
+        const bool same = old_piece == new_piece;
+        const auto old_changed = same ? (old_targets & ~new_targets) | (old_targets & changed) :
+            old_targets;
+        const auto new_changed = same ? (new_targets & ~old_targets) | (new_targets & changed) :
+            new_targets;
+        for (const square_t to : old_changed) {
+            for (const side_t side : {WHITE, BLACK}) {
+                if (!incremental[side])
+                    continue;
+                const auto index = threat_index(after.kings[side], from, to, old_piece,
+                                                 before.pieces[to], side);
+                if (index < THREAT_INPUTS)
+                    removed[side][removed_count[side]++] = index;
+            }
+        }
+        for (const square_t to : new_changed) {
+            for (const side_t side : {WHITE, BLACK}) {
+                if (!incremental[side])
+                    continue;
+                const auto index = threat_index(after.kings[side], from, to, new_piece,
+                                                 after.pieces[to], side);
+                if (index < THREAT_INPUTS)
+                    added[side][added_count[side]++] = index;
+            }
+        }
+    }
+
+    const auto append_pairs = [&](const feature_state_t& state,
+                                  const std::span<feature_buffer_t, 2> buffers,
+                                  std::array<size_t, 2>& counts) {
+        auto remaining = state.by_type[P];
+        for (const square_t from : state.by_type[P]) {
+            remaining.reset(from);
+            const auto targets = remaining & pawn_pair_files[from.file()];
+            for (const square_t to : changed[from] ? targets : targets & changed)
+                for (const side_t side : {WHITE, BLACK})
+                    if (incremental[side])
+                        buffers[side][counts[side]++] = pair_index(after.kings[side], from, to,
+                            state.pieces[from].side(), state.pieces[to].side(), side);
+        }
+    };
+    if (!(changed & pawns).empty()) {
+        append_pairs(before, removed, removed_count);
+        append_pairs(after, added, added_count);
+    }
+    std::array<std::array<std::span<uint32_t>, 2>, 2> result;
+    for (const side_t side : {WHITE, BLACK}) {
+        assert(removed_count[side] <= MAX_ACTIVE && added_count[side] <= MAX_ACTIVE);
+        result[side] = {std::span{removed[side]}.first(removed_count[side]),
+                        std::span{added[side]}.first(added_count[side])};
+    }
+    return result;
+}
+
 std::unique_ptr<nnue_t> load(const std::string_view filename) {
     return std::unique_ptr<nnue_t>(new nnue_t(filename));
 }
@@ -287,12 +406,16 @@ nnue_t::nnue_t(const std::string_view filename) {
         throw std::runtime_error{"unexpected trailing data in NNUE network: " + std::string{filename}};
 }
 
-void nnue_t::initialize(entry_t& entry) const noexcept {
+void nnue_t::initialize(accumulator_t& entry) const noexcept {
     std::ranges::copy(feature_layer.biases, entry.accumulation);
+}
+
+void nnue_t::initialize(entry_t& entry) const noexcept {
+    initialize(static_cast<accumulator_t&>(entry));
     entry.feature_count = 0;
 }
 
-void nnue_t::update(entry_t& entry, const std::span<const uint32_t> removed,
+void nnue_t::update(accumulator_t& entry, const std::span<const uint32_t> removed,
                     const std::span<const uint32_t> added) const noexcept {
     if (removed.empty() && added.empty())
         return;
@@ -325,11 +448,11 @@ void nnue_t::update(entry_t& entry, const std::span<const uint32_t> removed,
     }
 }
 
-int16_t nnue_t::evaluate(const entry_t& us, const entry_t& them, const size_t piece_count,
+int16_t nnue_t::evaluate(const accumulator_t& us, const accumulator_t& them, const size_t piece_count,
                         const bool our_queen, const bool their_queen) const noexcept {
     const size_t bucket = (piece_count - 1) / 4 * 4 + 2 * our_queen + their_queen;
     alignas(64) uint8_t transformed[L1];
-    const entry_t* perspectives[] = {&us, &them};
+    const accumulator_t* perspectives[] = {&us, &them};
     for (size_t p = 0; p < 2; ++p)
         for (size_t i = 0; i < L1 / 2; ++i) {
             const int first = std::clamp(int(perspectives[p]->accumulation[i]), 0, 255);

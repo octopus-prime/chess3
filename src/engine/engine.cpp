@@ -102,6 +102,7 @@ score_t engine_t::run(const ply_t max_depth, const std::chrono::steady_clock::du
     char output[2048];
     _nodes = 0;
     _end = start + duration;
+    _evaluator.reset_stack();
     _stop = stop;
     _node_limit = node_limit;
     score_t score{DRAW};
@@ -222,7 +223,9 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
             const int R = std::min(int{depth} - 1, 2 + depth / 3 +
                 std::min((int(static_eval) - int(beta)) / 200, 3));
             _position.do_null_move();
+            _evaluator.push();
             const score_t score = -search<false>(depth - 1 - R, height + 1, score_e(-beta), score_e(-beta + 1));
+            _evaluator.pop();
             _position.undo_null_move();
             if (score.ignore())
                 return IGNORE;
@@ -264,6 +267,7 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
         if (!is_tactical)
             searched_quiets[quiets_searched++] = move;
         _position.do_move(move);
+        _evaluator.push();
         const bool gives_check = _position.check();
         score_t score;
         if (move_count > 1) {
@@ -284,6 +288,7 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
         } else {
             score = -search<PV>(depth - 1, height + 1, -beta, -alpha);
         }
+        _evaluator.pop();
         _position.undo_move(move);
 
         if (score.ignore())
@@ -393,7 +398,9 @@ score_t engine_t::qsearch(ply_t height, score_t alpha, score_t beta) noexcept {
     for (const auto& scored_move : scored_moves) {
         const move_t move = scored_move.move;
         _position.do_move(move);
+        _evaluator.push();
         const score_t score = -qsearch(height + 1, -beta, -alpha);
+        _evaluator.pop();
         _position.undo_move(move);
 
         if (score.ignore())
@@ -411,7 +418,7 @@ score_t engine_t::evaluate() noexcept {
     const auto hash = _position.hash();
     if (const auto cached = _transposition.get_eval(hash))
         return *cached;
-    const auto evaluation = _evaluator.evaluate(_position);
+    const auto evaluation = _evaluator.evaluate_incremental(_position);
     _transposition.put_eval(hash, evaluation);
     return evaluation;
     // using namespace attacks::generator;

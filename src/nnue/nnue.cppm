@@ -40,17 +40,36 @@ uint32_t pair_index(square_t king, square_t from, square_t to, side_t color,
 std::array<std::span<uint32_t>, 2> active_features(
     const position_t& position, std::span<feature_buffer_t, 2> buffers) noexcept;
 
-struct entry_t final {
+struct feature_state_t final {
+    explicit feature_state_t(const position_t& position) noexcept;
+    std::array<piece_t, MAX_SQUARE> pieces{};
+    std::array<squares_t, MAX_TYPE> by_type{};
+    squares_t occupied;
+    std::array<square_t, 2> kings;
+    std::array<size_t, 2> blocks;
+};
+
+bool compatible(const feature_state_t& before, const feature_state_t& after,
+                side_t perspective) noexcept;
+std::array<std::array<std::span<uint32_t>, 2>, 2> changed_features(
+    const feature_state_t& before, const feature_state_t& after,
+    std::span<feature_buffer_t, 2> removed, std::span<feature_buffer_t, 2> added) noexcept;
+
+struct accumulator_t {
     alignas(64) int16_t accumulation[L1]{};
+};
+
+struct entry_t final : accumulator_t {
     feature_buffer_t features;
     size_t feature_count{};
 };
 
 struct nnue_t final {
+    void initialize(accumulator_t& accumulator) const noexcept;
     void initialize(entry_t& entry) const noexcept;
-    void update(entry_t& entry, std::span<const uint32_t> removed,
+    void update(accumulator_t& entry, std::span<const uint32_t> removed,
                 std::span<const uint32_t> added) const noexcept;
-    int16_t evaluate(const entry_t& us, const entry_t& them, size_t piece_count,
+    int16_t evaluate(const accumulator_t& us, const accumulator_t& them, size_t piece_count,
                      bool our_queen, bool their_queen) const noexcept;
 
 private:

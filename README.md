@@ -368,7 +368,10 @@ build independent test targets in parallel.
   promotions/underpromotions, move undo, and null-move round trips. Deterministic
   random walks from every reference fixture compare cached evaluation against a
   full accumulator rebuild after moves, null moves, and undo, then verify the
-  original Stockfish score is restored. Allocation checks cover cold cache entries.
+  original Stockfish score is restored. Search-stack tests also cover skipped
+  evaluations, sibling branches, and exact equality of all 1024 accumulator lanes
+  after feature deltas. Allocation checks cover cold cache entries and the maximum
+  search-stack depth.
 - `chess.mates`: mate-in-3/5/6 regressions with exact mate scores. The selective
   search uses depths 5/9/15 respectively; the mate-in-6 distance remains 11 plies,
   independent of its larger search-depth budget. The mate-in-8 case remains disabled.
@@ -403,7 +406,7 @@ The evaluator uses the unmodified Stockfish network
 matching Stockfish's SFNNv19 update. Its SHA-256 is
 `d1ee674a62ca754648fb8c2907ff4e92f0c3acff28f59afa0f5bd4e3949538f1`.
 The implementation follows Stockfish's GPLv3 NNUE architecture while retaining
-this project's independent, refresh-based design.
+this project's independent incremental search-stack and refresh-cache design.
 
 Before running `chess3` or Engine/NNUE tests, download
 [`nn-d1ee674a62ca.nnue`](https://raw.githubusercontent.com/official-stockfish/networks/master/nn-d1ee674a62ca.nnue)
@@ -417,7 +420,7 @@ custom network format is no longer supported; no network conversion is needed.
 There are three sparse input groups contributing to one 1024-element accumulator
 per perspective:
 
-- `FullThreats`: 59,808 attack/defence features, recomputed with current occupancy.
+- `FullThreats`: 59,808 attack/defence features, dependent on current occupancy.
 - `PP_3Wide`: 4,560 pawn-pair features for pawns on the same or adjacent files.
 - `K32H3`: 67,584 piece-square features, split into three heavy-material blocks
   and conditioned on king bucket and opposing queen presence.
@@ -432,12 +435,40 @@ enumeration uses adjacent-file bitboard masks rather than testing every pair.
 Feature and delta buffers have a conservative legal-position bound of 1,144
 indices (32 PSQs, at most 32 * 31 directed threats, and 120 pawn pairs).
 Evaluation performs no heap allocations, including the first visit to any king
-cache entry; only evaluator construction allocates the network and cache.
+cache entry; only evaluator construction allocates the network, cache, and search stack.
 Accumulator updates stream weight rows in SIMD register tiles, combining paired
 additions and removals into weight differences before updating the accumulator.
-Unpaired rows are applied separately. This includes
-remote slider threats, pawn pairs, and queen-plane changes. There are no
-dirty-piece/dirty-threat records, accumulator stacks, or changes to move execution.
+Unpaired rows are applied separately.
+
+Search uses a lazy, fixed-capacity accumulator stack. `push()` invalidates the
+child frame and `pop()` restores the parent; TT hits and other nodes that skip
+evaluation do not build features. On evaluation, a compact board snapshot is
+compared with the nearest evaluated ancestor. Piece-square deltas, threats from
+changed attackers or affected stationary attackers (including remote slider
+x-rays), and pawn pairs with changed endpoints are applied to the ancestor's
+accumulators. Both perspectives share change detection and attack generation.
+King-square or heavy-material-block changes use the existing refresh cache for
+the affected perspective. Null moves reuse unchanged feature sums and select
+the opposite perspective. Search resets the stack before each run, and PV
+extraction leaves it untouched.
+
+This deliberately derives dirty features at evaluation time rather than adding
+Stockfish-style dirty records to Core move execution; perft is unchanged.
+The standalone `evaluate()` and full `active_features()` paths remain available
+as correctness references. Callers of `evaluate_incremental()` must reset the
+stack for a new root and balance push/pop with search moves, including null moves.
+
+Compare two engine builds with identical fixed-depth searches:
+
+```sh
+python3 scripts/benchmark_search.py /path/to/baseline/chess3 /path/to/candidate/chess3 \
+    --depth 18 --rounds 8
+```
+
+The script alternates execution order on three positions, requires identical
+scores, node counts, PVs, and best moves, and reports throughput using total
+nodes divided by total search time inferred from reported NPS. Processes run
+from `src/` so they use the same network in the repository root.
 
 After pairwise clipped activation, the dense network is
 `1024 -> 32 -> 32 -> 1`, with squared and linear activations, concatenated skip

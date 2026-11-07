@@ -11,6 +11,7 @@ import core.position;
 import core.move;
 import types.square;
 import types.score;
+import types.ply;
 import nnue.nnue;
 
 using namespace chess;
@@ -116,19 +117,126 @@ bool test_allocation_free_evaluation() {
                 king_scores[i] = evaluator.evaluate(positions[i]);
             else
                 correct &= evaluator.evaluate(positions[i]) == king_scores[i];
+            evaluator.reset_stack();
+            correct &= evaluator.evaluate_incremental(positions[i]) == king_scores[i];
         }
-        for (size_t i = 0; i < nnue_reference::cases.size(); ++i)
+        for (size_t i = 0; i < nnue_reference::cases.size(); ++i) {
             correct &= evaluator.evaluate(positions[king_positions + i]) == nnue_reference::cases[i].score;
+            evaluator.reset_stack();
+            correct &= evaluator.evaluate_incremental(positions[king_positions + i]) ==
+                nnue_reference::cases[i].score;
+            for (size_t ply = 1; ply < MAX_PLY; ++ply)
+                evaluator.push();
+            correct &= evaluator.evaluate_incremental(positions[king_positions + i]) ==
+                nnue_reference::cases[i].score;
+            for (size_t ply = 1; ply < MAX_PLY; ++ply)
+                evaluator.pop();
+        }
     }
     const auto after = test_allocation_count();
     return test_support::check(correct, "allocation test retains exact reference evaluations") &&
         test_support::check(after == before, "evaluation allocates nothing, including all cold king-cache entries");
 }
 
+bool test_incremental_stack() {
+    const auto network = nnue::load();
+    evaluator_t evaluator;
+    std::mt19937 random{20261107};
+    std::array<nnue::feature_buffer_t, 2> buffers;
+    std::array<nnue::entry_t, 2> rebuilt;
+    const auto matches = [&](const position_t& position) {
+        const auto features = nnue::active_features(position, buffers);
+        for (const side_t side : {WHITE, BLACK}) {
+            network->initialize(rebuilt[side]);
+            network->update(rebuilt[side], {}, features[side]);
+        }
+        const auto side = position.side();
+        return test_support::check(
+            evaluator.evaluate_incremental(position) == network->evaluate(
+                rebuilt[side], rebuilt[~side], position.by().size(),
+                !position.by(side, Q).empty(), !position.by(~side, Q).empty()),
+            "lazy search-stack evaluation matches a full rebuild");
+    };
+    const auto check_delta = [&](const position_t& before, const position_t& after) {
+        const nnue::feature_state_t old_state{before}, new_state{after};
+        std::array<nnue::entry_t, 2> updated;
+        const auto old_features = nnue::active_features(before, buffers);
+        for (const side_t side : {WHITE, BLACK}) {
+            network->initialize(updated[side]);
+            network->update(updated[side], {}, old_features[side]);
+        }
+        std::array<nnue::feature_buffer_t, 2> removed, added;
+        const auto changes = nnue::changed_features(old_state, new_state, removed, added);
+        for (const side_t side : {WHITE, BLACK}) {
+            if (!nnue::compatible(old_state, new_state, side))
+                continue;
+            network->update(updated[side], changes[side][0], changes[side][1]);
+            const auto features = nnue::active_features(after, buffers);
+            network->initialize(rebuilt[side]);
+            network->update(rebuilt[side], {}, features[side]);
+            if (!test_support::check(
+                    std::ranges::equal(updated[side].accumulation, rebuilt[side].accumulation),
+                    "incremental deltas reproduce all 1024 accumulator lanes exactly"))
+                return false;
+        }
+        return true;
+    };
+    for (const auto& test : nnue_reference::cases) {
+        position_t position{test.fen};
+        evaluator.reset_stack();
+        if (!matches(position))
+            return false;
+        std::array<move_t, 80> path;
+        size_t count = 0;
+        for (; count < path.size(); ++count) {
+            std::array<move_t, 256> buffer;
+            const auto moves = position.generate_all_moves(buffer);
+            if (moves.empty())
+                break;
+            const auto before = position;
+            path[count] = moves[random() % moves.size()];
+            position.do_move(path[count]);
+            evaluator.push();
+            if (!check_delta(before, position))
+                return false;
+            // Leave some frames unevaluated, as TT hits and check nodes do in search.
+            if (count % 3 != 1 && !matches(position))
+                return false;
+            if (!position.check()) {
+                position.do_null_move();
+                evaluator.push();
+                if (!matches(position))
+                    return false;
+                evaluator.pop();
+                position.undo_null_move();
+            }
+            const auto siblings = position.generate_all_moves(buffer);
+            if (!siblings.empty()) {
+                const auto move = siblings[random() % siblings.size()];
+                evaluator.push();
+                position.do_move(move);
+                if (!matches(position))
+                    return false;
+                position.undo_move(move);
+                evaluator.pop();
+            }
+        }
+        while (count) {
+            position.undo_move(path[--count]);
+            evaluator.pop();
+            if (!matches(position))
+                return false;
+        }
+    }
+    return true;
+}
+
 }
 
 bool run_evaluator_tests() {
     evaluator_t evaluator{};
+    if (!test_incremental_stack())
+        return false;
 
     position_t position{};
     bool passed = test_support::check(evaluator.evaluate(position) == score_e{10},
@@ -196,11 +304,17 @@ bool run_evaluator_tests() {
         move_case_t{"4k3/8/8/8/8/8/3q4/3RK3 w - - 0 1", {d1, d2}},
         move_case_t{"4k3/P7/8/8/8/8/8/4K3 w - - 0 1", {a7, a8, Q}},
         move_case_t{"4k3/P7/8/8/8/8/8/4K3 w - - 0 1", {a7, a8, N}},
+        move_case_t{"4k3/P7/8/8/8/8/8/4K3 w - - 0 1", {a7, a8, B}},
+        move_case_t{"4k3/P7/8/8/8/8/8/4K3 w - - 0 1", {a7, a8, R}},
+        move_case_t{"1r2k3/P7/8/8/8/8/8/4K3 w - - 0 1", {a7, b8, N}},
         move_case_t{"4k3/8/8/8/8/8/p7/4K3 b - - 0 1", {a2, a1, Q}}
     };
     for (const auto& test : moves) {
         position.setup(test.fen);
         const auto before = evaluator.evaluate(position);
+        evaluator.reset_stack();
+        passed &= test_support::check(evaluator.evaluate_incremental(position) == before,
+                                      "search-stack root matches the reference evaluator");
         std::array<move_t, 256> legal_buffer;
         const auto legal = position.generate_all_moves(legal_buffer);
         const bool valid = std::ranges::find(legal, test.move) != legal.end();
@@ -208,10 +322,16 @@ bool run_evaluator_tests() {
         if (!valid)
             continue;
         position.do_move(test.move);
+        evaluator.push();
         evaluator_t fresh;
         passed &= test_support::check(evaluator.evaluate(position) == fresh.evaluate(position),
                                       "cache refresh handles castling, en passant, queen capture, and promotion");
+        passed &= test_support::check(evaluator.evaluate_incremental(position) == fresh.evaluate(position),
+                                      "search-stack deltas handle special moves and refresh boundaries");
         position.undo_move(test.move);
+        evaluator.pop();
+        passed &= test_support::check(evaluator.evaluate_incremental(position) == before,
+                                      "search-stack pop restores the parent accumulator");
         passed &= test_support::check(evaluator.evaluate(position) == before,
                                       "cache refresh restores all three feature families after undo");
     }
