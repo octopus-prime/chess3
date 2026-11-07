@@ -194,6 +194,10 @@ std::array<std::span<uint32_t>, 2> active_features(
     const position_t& position, const std::span<feature_buffer_t, 2> buffers) noexcept {
     std::array<size_t, 2> counts{};
     const square_t kings[] = {position.by(WHITE, K).front(), position.by(BLACK, K).front()};
+    const uint8_t flips[] = {
+        orientation(kings[WHITE], WHITE),
+        orientation(kings[BLACK], BLACK)
+    };
     const bool queens[] = {!position.by(WHITE, Q).empty(), !position.by(BLACK, Q).empty()};
     const bool any_heavy_pieces = !position.by(R).empty() || !position.by(Q).empty();
     const size_t psq_blocks[] = {
@@ -209,12 +213,32 @@ std::array<std::span<uint32_t>, 2> active_features(
                 make_index(kings[side], from, piece, side, psq_blocks[side]);
         if (piece.type() == K)
             continue;
+
+        const auto type = piece.type();
+        const uint8_t oriented_from[] = {
+            static_cast<uint8_t>(uint8_t(from) ^ flips[WHITE]),
+            static_cast<uint8_t>(uint8_t(from) ^ flips[BLACK])
+        };
+        const uint32_t attacker_bases[] = {
+            attack_offsets[type] + 29904 * (piece.side() != WHITE),
+            attack_offsets[type] + 29904 * (piece.side() != BLACK)
+        };
         for (const square_t to : attacks(piece.type(), from, occupied, piece.side()) & occupied) {
             const auto target = position.at(to);
+            const int mapped = target_map[type - 1][target.type() - 1];
+            if (mapped < 0)
+                continue;
             for (const side_t side : {WHITE, BLACK}) {
-                const auto index = threat_index(kings[side], from, to, piece, target, side);
-                if (index < THREAT_INPUTS)
-                    buffers[side][counts[side]++] = index;
+                const auto oriented_to = uint8_t(to) ^ flips[side];
+                if (oriented_from[side] < oriented_to && type == target.type() &&
+                    (piece.side() != target.side() || type != P))
+                    continue;
+                const uint32_t target_block = target_counts[type] / 2 *
+                    (target.side() != side) + mapped;
+                const uint32_t index = attacker_bases[side] +
+                    target_block * attack_counts[type] +
+                    threat_table.index[type][oriented_from[side]][oriented_to];
+                buffers[side][counts[side]++] = index;
             }
         }
     }
