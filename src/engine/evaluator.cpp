@@ -69,18 +69,14 @@ score_t evaluator_t::evaluate_incremental(const position_t& position) noexcept {
         }
     }
     const auto side = position.side();
-    return score_e(_nnue->evaluate(current.entries[side], current.entries[~side],
-        position.by().size(), !position.by(side, Q).empty(), !position.by(~side, Q).empty()));
+    return score_e(_nnue->evaluate(current.entries[side], current.entries[~side], position));
 }
 
 score_t evaluator_t::evaluate(const position_t& position) noexcept {
     const auto features = nnue::active_features(position, _features);
     const nnue::entry_t& t = refresh(position, position.side(), features[position.side()]);
     const nnue::entry_t& o = refresh(position, ~position.side(), features[~position.side()]);
-    const auto side = position.side();
-    auto score = _nnue->evaluate(t, o, position.by().size(),
-                                !position.by(side, Q).empty(),
-                                !position.by(~side, Q).empty());
+    auto score = _nnue->evaluate(t, o, position);
     // score -= score * position.halfmove() / 212;
     return score_e(score);
 }

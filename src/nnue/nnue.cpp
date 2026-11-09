@@ -383,18 +383,42 @@ nnue_t::nnue_t(const std::string_view filename) {
     if (!stream)
         throw std::runtime_error{"unable to open NNUE network: " + std::string{filename}};
     if (read_integer<uint32_t>(stream) != 0x6A448AFA ||
-        read_integer<uint32_t>(stream) != 0xC0357A83)
+        read_integer<uint32_t>(stream) != 0x9A4FCB66)
         throw std::runtime_error{"unsupported NNUE network format: " + std::string{filename}};
     const auto description_size = read_integer<uint32_t>(stream);
     if (description_size > 4096)
         throw std::runtime_error{"invalid NNUE network description length"};
     std::array<char, 4096> description;
     read_bytes(stream, description.data(), description_size);
+    if (read_integer<uint32_t>(stream) != 0x5A7AB1E5 ||
+        read_integer<uint32_t>(stream) != SLOTS)
+        throw std::runtime_error{"unsupported NNUE stack table"};
+    const auto stored_stacks = read_integer<uint32_t>(stream);
+    if (stored_stacks == 0 || stored_stacks > SLOTS)
+        throw std::runtime_error{"invalid NNUE stack count"};
+    std::array<uint16_t, SLOTS> fallbacks;
+    for (auto& fallback : fallbacks) {
+        fallback = read_integer<uint16_t>(stream);
+        if (fallback >= SLOTS)
+            throw std::runtime_error{"invalid NNUE stack fallback"};
+    }
+    size_t count = 0;
+    for (size_t raw = 0; raw < SLOTS; ++raw)
+        if (fallbacks[raw] == raw)
+            stack_indices[raw] = static_cast<uint16_t>(count++);
+    if (count != stored_stacks)
+        throw std::runtime_error{"inconsistent NNUE stack count"};
+    for (size_t raw = 0; raw < SLOTS; ++raw) {
+        const auto fallback = fallbacks[raw];
+        if (fallbacks[fallback] != fallback)
+            throw std::runtime_error{"invalid NNUE stack fallback chain"};
+        stack_indices[raw] = stack_indices[fallback];
+    }
     if (read_integer<uint32_t>(stream) != 0xA3060B95)
         throw std::runtime_error{"unsupported NNUE feature transformer"};
     read_bytes(stream, feature_layer.biases, sizeof(feature_layer.biases));
     read_bytes(stream, feature_layer.weights, sizeof(feature_layer.weights));
-    for (auto& layer : hidden_layers) {
+    for (auto& layer : std::span{hidden_layers}.first(stored_stacks)) {
         if (read_integer<uint32_t>(stream) != 0x63337116)
             throw std::runtime_error{"unsupported NNUE layer stack"};
         read_affine<L1>(stream, layer.biases1, layer.weights1);
@@ -448,9 +472,24 @@ void nnue_t::update(accumulator_t& entry, const std::span<const uint32_t> remove
     }
 }
 
-int16_t nnue_t::evaluate(const accumulator_t& us, const accumulator_t& them, const size_t piece_count,
-                        const bool our_queen, const bool their_queen) const noexcept {
-    const size_t bucket = (piece_count - 1) / 4 * 4 + 2 * our_queen + their_queen;
+size_t stack_index(const position_t& position) noexcept {
+    const auto side = position.side();
+    const size_t queens = 2 * !position.by(side, Q).empty() + !position.by(~side, Q).empty();
+    const auto pawns = position.by(P);
+    constexpr squares_t queen_side{a, b, c, d};
+    const size_t layout = pawns.empty() ? 2 :
+        !(pawns & queen_side).empty() && !(pawns & ~queen_side).empty() ? 0 : 1;
+    const auto non_officers = position.by(P, K);
+    const bool many = (position.by(WHITE) & ~non_officers).size() >= 2 ||
+        (position.by(BLACK) & ~non_officers).size() >= 2;
+    const size_t count = position.by().size();
+    assert(count >= 2 && count <= 32);
+    return (((count - 1) / 4 * 4 + queens) * 3 + layout) * 2 + many;
+}
+
+int16_t nnue_t::evaluate(const accumulator_t& us, const accumulator_t& them,
+                        const position_t& position) const noexcept {
+    const size_t bucket = layer_stack(position);
     alignas(64) uint8_t transformed[L1];
     const accumulator_t* perspectives[] = {&us, &them};
     for (size_t p = 0; p < 2; ++p)
@@ -477,6 +516,10 @@ int16_t nnue_t::evaluate(const accumulator_t& us, const accumulator_t& them, con
     const int64_t output = int64_t(layer.bias3) + _mm512_reduce_add_epi32(sum) +
         int64_t(first[30]) - first[31];
     return static_cast<int16_t>((output * 9600 / 16384) / 16);
+}
+
+size_t nnue_t::layer_stack(const position_t& position) const noexcept {
+    return stack_indices[stack_index(position)];
 }
 
 }

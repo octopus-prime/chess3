@@ -354,8 +354,9 @@ build independent test targets in parallel.
   (`1`, `48`, `2039`, `97862`, `4085603`, `193690690`), focused en-passant positions for both colors
   at depths zero through two (`1`, `7`, `38`), and repeated-call restoration.
 - `chess.nnue`: exact Stockfish feature-index and raw-evaluation references across
-  all 32 network stacks, incremental/full accumulator equivalence, and network
-  loader error checks.
+  all 92 stored SFNNv20 network stacks, pawn-layout/officer-count routing and
+  fallback selection, incremental/full accumulator equivalence, and network
+  loader error checks (including invalid stack counts, ranges, and fallback chains).
 - `chess.engine`: quiescence quiet promotions, checkmate, quiet check evasions, and TT mate-score
   conversion across search heights for exact, lower-bound, and upper-bound entries,
   history gravity bounds and piece/square isolation, and history ordering without
@@ -402,20 +403,22 @@ Set `BUILD_TESTING=OFF` to omit all four test executables.
 ## NNUE network
 
 The evaluator uses the unmodified Stockfish network
-[`nn-d1ee674a62ca.nnue`](https://github.com/official-stockfish/networks/blob/master/nn-d1ee674a62ca.nnue),
-matching Stockfish's SFNNv19 update. Its SHA-256 is
-`d1ee674a62ca754648fb8c2907ff4e92f0c3acff28f59afa0f5bd4e3949538f1`.
+[`nn-18cd32e11a9c.nnue`](https://github.com/official-stockfish/networks/blob/master/nn-18cd32e11a9c.nnue),
+matching Stockfish's SFNNv20 update. Its SHA-256 is
+`18cd32e11a9cac7c595bc6ebf1301088da8e1f2c7b31efda88dbc74c71f5d2cf`.
 The implementation follows Stockfish's GPLv3 NNUE architecture while retaining
 this project's independent incremental search-stack and refresh-cache design.
 
 Before running `chess3` or Engine/NNUE tests, download
-[`nn-d1ee674a62ca.nnue`](https://raw.githubusercontent.com/official-stockfish/networks/master/nn-d1ee674a62ca.nnue)
+[`nn-18cd32e11a9c.nnue`](https://media.githubusercontent.com/media/official-stockfish/networks/master/nn-18cd32e11a9c.nnue)
 and place it in the repository root, keeping its original filename.
 No extraction, renaming, or conversion is needed. The loader opens
-`../nn-d1ee674a62ca.nnue`, so run these executables from `build/`; CTest uses that directory.
-It reads the standard little-endian SFNNv19 `.nnue` format directly and checks
-version, architecture/section hashes, truncation, and trailing data. The previous
-custom network format is no longer supported; no network conversion is needed.
+`../nn-18cd32e11a9c.nnue`, so run these executables from `build/`; CTest uses that directory.
+The media download URL returns the actual network, not its Git LFS pointer.
+It reads the standard little-endian SFNNv20 `.nnue` format directly and checks
+version, architecture/section hashes, stack-table dimensions and fallback
+consistency, truncation, and trailing data. SFNNv19 and earlier network formats
+are rejected explicitly; no network conversion is needed.
 
 There are three sparse input groups contributing to one 1024-element accumulator
 per perspective:
@@ -472,7 +475,13 @@ from `src/` so they use the same network in the repository root.
 
 After pairwise clipped activation, the dense network is
 `1024 -> 32 -> 32 -> 1`, with squared and linear activations, concatenated skip
-connections, and 32 stacks selected by piece count and both sides' queen presence.
+connections. SFNNv20 has 192 raw stack configurations selected by piece-count
+band, both sides' queen presence, pawn layout (both file halves, one half, or
+no pawns), and whether either side has at least two officers (non-pawn, non-king
+pieces). The network's fallback table maps these to its stored dense stacks;
+the default network contains 92. Input features and incremental accumulator
+updates are unchanged from SFNNv19; only dense-stack selection and file metadata
+changed.
 Evaluation matches Stockfish's raw `Network::evaluate()` integer result, including
 its output scaling; Stockfish's additional evaluation/search adjustments are not
 applied. AVX-512 VNNI is used for dense inference. The first affine layer detects
@@ -482,6 +491,17 @@ zero groups contribute nothing and require no weight loads.
 The checked-in reference fixtures in [reference_positions.hpp](test/nnue/reference_positions.hpp)
 were generated from the adjacent Stockfish implementation and this exact network.
 Tests require only the downloaded network, not a Stockfish checkout or executable.
+To regenerate them against a matching Stockfish checkout:
+
+```sh
+python3 test/nnue/generate_reference.py ../Stockfish
+```
+
+The generator builds [stockfish_reference.cpp](test/nnue/stockfish_reference.cpp)
+against that checkout in a temporary directory, without modifying Stockfish.
+It preserves the move-walk fixtures and generates synthetic board configurations
+covering every stored stack, including fallbacks. These routing-only fixtures
+may describe unreachable game states and are not used for move-generation tests.
 
 ## Build and run
 

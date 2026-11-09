@@ -34,8 +34,7 @@ bool test_random_cache_transitions() {
         }
         const auto side = position.side();
         const auto expected = network->evaluate(
-            entries[side], entries[~side], position.by().size(),
-            !position.by(side, Q).empty(), !position.by(~side, Q).empty());
+            entries[side], entries[~side], position);
         return test_support::check(evaluator.evaluate(position) == expected,
                                    "random-walk cached evaluation matches a full accumulator rebuild");
     };
@@ -153,8 +152,7 @@ bool test_incremental_stack() {
         const auto side = position.side();
         return test_support::check(
             evaluator.evaluate_incremental(position) == network->evaluate(
-                rebuilt[side], rebuilt[~side], position.by().size(),
-                !position.by(side, Q).empty(), !position.by(~side, Q).empty()),
+                rebuilt[side], rebuilt[~side], position),
             "lazy search-stack evaluation matches a full rebuild");
     };
     const auto check_delta = [&](const position_t& before, const position_t& after) {
@@ -239,23 +237,23 @@ bool run_evaluator_tests() {
         return false;
 
     position_t position{};
-    bool passed = test_support::check(evaluator.evaluate(position) == score_e{10},
+    bool passed = test_support::check(evaluator.evaluate(position) == score_e{34},
                                       "evaluator initial position");
 
     position.do_move(move_t{e2, e4});
-    passed &= test_support::check(evaluator.evaluate(position) == score_e{-2},
+    passed &= test_support::check(evaluator.evaluate(position) == score_e{-24},
                                   "evaluator after 1. e4");
 
     position.do_move(move_t{e7, e5});
-    passed &= test_support::check(evaluator.evaluate(position) == score_e{26},
+    passed &= test_support::check(evaluator.evaluate(position) == score_e{46},
                                   "evaluator after 1... e5");
 
     position = position_t{"1k6/8/8/8/3r4/2P5/8/K7 w - -"};
-    passed &= test_support::check(evaluator.evaluate(position) == score_e{-1471},
+    passed &= test_support::check(evaluator.evaluate(position) == score_e{-1465},
                                   "evaluator custom position white to move");
 
     position = position_t{"1k6/8/8/8/3r4/2P5/8/K7 b - -"};
-    passed &= test_support::check(evaluator.evaluate(position) == score_e{1462},
+    passed &= test_support::check(evaluator.evaluate(position) == score_e{2745},
                                   "evaluator custom position black to move");
 
     // Test king moves and cache consistency compared to fresh evaluation
@@ -307,6 +305,8 @@ bool run_evaluator_tests() {
         move_case_t{"4k3/P7/8/8/8/8/8/4K3 w - - 0 1", {a7, a8, B}},
         move_case_t{"4k3/P7/8/8/8/8/8/4K3 w - - 0 1", {a7, a8, R}},
         move_case_t{"1r2k3/P7/8/8/8/8/8/4K3 w - - 0 1", {a7, b8, N}},
+        move_case_t{"r3k3/8/8/4n3/3P4/8/4P3/4K3 w - - 0 1", {d4, e5}},
+        move_case_t{"4k3/8/8/3p4/8/8/8/3RK3 w - - 0 1", {d1, d5}},
         move_case_t{"4k3/8/8/8/8/8/p7/4K3 b - - 0 1", {a2, a1, Q}}
     };
     for (const auto& test : moves) {

@@ -25,11 +25,14 @@ constexpr size_t L0 = PSQ_OFFSET + PSQ_INPUTS;
 constexpr size_t L1 = 1024;
 constexpr size_t L2 = 32;
 constexpr size_t L3 = 32;
-constexpr size_t SLOTS = 32;
+constexpr size_t SLOTS = 192;
 // At most 32 PSQs, 32 * 31 directed threats, and 16 * 15 / 2 pawn pairs.
 constexpr size_t MAX_ACTIVE = 32 + 32 * 31 + 16 * 15 / 2;
 using feature_buffer_t = std::array<uint32_t, MAX_ACTIVE>;
-constexpr std::string_view NETWORK_NAME = "nn-d1ee674a62ca.nnue";
+constexpr std::string_view NETWORK_NAME = "nn-18cd32e11a9c.nnue";
+constexpr std::string_view NETWORK_PATH = "../nn-18cd32e11a9c.nnue";
+
+size_t stack_index(const position_t& position) noexcept;
 
 uint32_t make_index(square_t king, square_t square, piece_t piece, side_t perspective,
                     size_t psq_block) noexcept;
@@ -65,12 +68,13 @@ struct entry_t final : accumulator_t {
 };
 
 struct nnue_t final {
+    size_t layer_stack(const position_t& position) const noexcept;
     void initialize(accumulator_t& accumulator) const noexcept;
     void initialize(entry_t& entry) const noexcept;
     void update(accumulator_t& entry, std::span<const uint32_t> removed,
                 std::span<const uint32_t> added) const noexcept;
-    int16_t evaluate(const accumulator_t& us, const accumulator_t& them, size_t piece_count,
-                     bool our_queen, bool their_queen) const noexcept;
+    int16_t evaluate(const accumulator_t& us, const accumulator_t& them,
+                     const position_t& position) const noexcept;
 
 private:
     explicit nnue_t(std::string_view filename);
@@ -91,10 +95,11 @@ private:
 
     feature_layer_t feature_layer;
     hidden_layer_t hidden_layers[SLOTS];
+    std::array<uint16_t, SLOTS> stack_indices;
 
     friend std::unique_ptr<nnue_t> load(std::string_view);
 };
 
-std::unique_ptr<nnue_t> load(std::string_view filename = "../nn-d1ee674a62ca.nnue");
+std::unique_ptr<nnue_t> load(std::string_view filename = NETWORK_PATH);
 
 }
