@@ -439,9 +439,12 @@ Feature and delta buffers have a conservative legal-position bound of 1,144
 indices (32 PSQs, at most 32 * 31 directed threats, and 120 pawn pairs).
 Evaluation performs no heap allocations, including the first visit to any king
 cache entry; only evaluator construction allocates the network, cache, and search stack.
-Accumulator updates stream weight rows in SIMD register tiles, combining paired
-additions and removals into weight differences before updating the accumulator.
-Unpaired rows are applied separately.
+Accumulator updates stream weight rows in SIMD register tiles. A load-time
+permutation lets byte interleaving and `maddubs` widen and sum two int8 rows
+with the same sign at once, preserving the accumulator's original lane order.
+If both removal and addition counts are odd, the remaining rows are combined
+into one difference; otherwise the single remaining row is widened separately.
+The network file format and wrapping int16 accumulator arithmetic are unchanged.
 
 Search uses a lazy, fixed-capacity accumulator stack. `push()` invalidates the
 child frame and `pop()` restores the parent; TT hits and other nodes that skip

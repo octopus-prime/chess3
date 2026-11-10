@@ -34,8 +34,8 @@ bool test_paired_updates(const nnue::nnue_t& network) {
         removed[i] = (i * 997) % nnue::L0;
         added[i] = (nnue::PSQ_OFFSET + i * 127) % nnue::L0;
     }
-    for (const size_t remove_count : {0, 1, 2, 7, 16, 33})
-        for (const size_t add_count : {0, 1, 2, 7, 16, 33}) {
+    for (size_t remove_count = 0; remove_count <= removed.size(); ++remove_count)
+        for (size_t add_count = 0; add_count <= added.size(); ++add_count) {
             nnue::entry_t paired{};
             network.initialize(paired);
             for (size_t i = 0; i < nnue::L1; ++i)
@@ -44,8 +44,10 @@ bool test_paired_updates(const nnue::nnue_t& network) {
             const auto remove = std::span{removed}.first(remove_count);
             const auto add = std::span{added}.first(add_count);
             network.update(paired, remove, add);
-            network.update(separate, remove, {});
-            network.update(separate, {}, add);
+            for (const auto& feature : remove)
+                network.update(separate, std::span{&feature, 1}, {});
+            for (const auto& feature : add)
+                network.update(separate, {}, std::span{&feature, 1});
             if (!test_support::check(
                     std::ranges::equal(paired.accumulation, separate.accumulation),
                     "paired updates match separate updates for unequal counts and wrapping sums"))

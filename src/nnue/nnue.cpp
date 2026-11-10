@@ -418,6 +418,12 @@ nnue_t::nnue_t(const std::string_view filename) {
         throw std::runtime_error{"unsupported NNUE feature transformer"};
     read_bytes(stream, feature_layer.biases, sizeof(feature_layer.biases));
     read_bytes(stream, feature_layer.weights, sizeof(feature_layer.weights));
+    // Lane-local byte unpacks must produce consecutive int16 accumulator lanes.
+    const auto order = _mm512_setr_epi64(0, 4, 1, 5, 2, 6, 3, 7);
+    for (auto& row : feature_layer.weights)
+        for (size_t offset = 0; offset < L1; offset += 64)
+            _mm512_store_si512(row + offset,
+                _mm512_permutexvar_epi64(order, _mm512_load_si512(row + offset)));
     for (auto& layer : std::span{hidden_layers}.first(stored_stacks)) {
         if (read_integer<uint32_t>(stream) != 0x63337116)
             throw std::runtime_error{"unsupported NNUE layer stack"};
@@ -444,29 +450,64 @@ void nnue_t::update(accumulator_t& entry, const std::span<const uint32_t> remove
     if (removed.empty() && added.empty())
         return;
     constexpr size_t registers = 16;
+    const auto ones = _mm512_set1_epi8(1);
+    const auto zero = _mm512_setzero_si512();
+    const auto bias = _mm512_set1_epi8(-128);
+    const auto signs = _mm512_set1_epi16(-255);
     for (size_t base = 0; base < L1; base += registers * 32) {
         __m512i accumulation[registers];
         for (size_t i = 0; i < registers; ++i)
             accumulation[i] = _mm512_load_si512(entry.accumulation + base + i * 32);
-        const auto paired = std::min(removed.size(), added.size());
-        for (size_t index = 0; index < paired; ++index)
-            for (size_t i = 0; i < registers; ++i) {
-                const auto remove = _mm512_cvtepi8_epi16(_mm256_load_si256(
-                    reinterpret_cast<const __m256i*>(feature_layer.weights[removed[index]] + base + i * 32)));
-                const auto add = _mm512_cvtepi8_epi16(_mm256_load_si256(
-                    reinterpret_cast<const __m256i*>(feature_layer.weights[added[index]] + base + i * 32)));
-                accumulation[i] = _mm512_add_epi16(accumulation[i], _mm512_sub_epi16(add, remove));
+        const auto apply_pairs = [&]<bool Add>(const std::span<const uint32_t> features) {
+            for (size_t index = 0; index + 1 < features.size(); index += 2) {
+                const auto* first = feature_layer.weights[features[index]] + base;
+                const auto* second = feature_layer.weights[features[index + 1]] + base;
+                for (size_t i = 0; i < registers; i += 2) {
+                    const auto a = _mm512_load_si512(first + i * 32);
+                    const auto b = _mm512_load_si512(second + i * 32);
+                    const auto low = _mm512_maddubs_epi16(ones, _mm512_unpacklo_epi8(a, b));
+                    const auto high = _mm512_maddubs_epi16(ones, _mm512_unpackhi_epi8(a, b));
+                    if constexpr (Add) {
+                        accumulation[i] = _mm512_add_epi16(accumulation[i], low);
+                        accumulation[i + 1] = _mm512_add_epi16(accumulation[i + 1], high);
+                    } else {
+                        accumulation[i] = _mm512_sub_epi16(accumulation[i], low);
+                        accumulation[i + 1] = _mm512_sub_epi16(accumulation[i + 1], high);
+                    }
+                }
             }
-        for (const auto feature : removed.subspan(paired))
-            for (size_t i = 0; i < registers; ++i)
-                accumulation[i] = _mm512_sub_epi16(accumulation[i],
-                    _mm512_cvtepi8_epi16(_mm256_load_si256(
-                        reinterpret_cast<const __m256i*>(feature_layer.weights[feature] + base + i * 32))));
-        for (const auto feature : added.subspan(paired))
-            for (size_t i = 0; i < registers; ++i)
+        };
+        apply_pairs.template operator()<false>(removed);
+        apply_pairs.template operator()<true>(added);
+        const bool odd_removed = removed.size() % 2;
+        const bool odd_added = added.size() % 2;
+        if (odd_removed && odd_added) {
+            const auto* remove = feature_layer.weights[removed.back()] + base;
+            const auto* add = feature_layer.weights[added.back()] + base;
+            // Unsigned byte biases cancel in the (+1, -1) dot product.
+            for (size_t i = 0; i < registers; i += 2) {
+                const auto a = _mm512_xor_si512(_mm512_load_si512(add + i * 32), bias);
+                const auto b = _mm512_xor_si512(_mm512_load_si512(remove + i * 32), bias);
                 accumulation[i] = _mm512_add_epi16(accumulation[i],
-                    _mm512_cvtepi8_epi16(_mm256_load_si256(
-                        reinterpret_cast<const __m256i*>(feature_layer.weights[feature] + base + i * 32))));
+                    _mm512_maddubs_epi16(_mm512_unpacklo_epi8(a, b), signs));
+                accumulation[i + 1] = _mm512_add_epi16(accumulation[i + 1],
+                    _mm512_maddubs_epi16(_mm512_unpackhi_epi8(a, b), signs));
+            }
+        } else if (odd_removed || odd_added) {
+            const auto* row = feature_layer.weights[odd_added ? added.back() : removed.back()] + base;
+            for (size_t i = 0; i < registers; i += 2) {
+                const auto weight = _mm512_load_si512(row + i * 32);
+                const auto low = _mm512_srai_epi16(_mm512_unpacklo_epi8(zero, weight), 8);
+                const auto high = _mm512_srai_epi16(_mm512_unpackhi_epi8(zero, weight), 8);
+                if (odd_added) {
+                    accumulation[i] = _mm512_add_epi16(accumulation[i], low);
+                    accumulation[i + 1] = _mm512_add_epi16(accumulation[i + 1], high);
+                } else {
+                    accumulation[i] = _mm512_sub_epi16(accumulation[i], low);
+                    accumulation[i + 1] = _mm512_sub_epi16(accumulation[i + 1], high);
+                }
+            }
+        }
         for (size_t i = 0; i < registers; ++i)
             _mm512_store_si512(entry.accumulation + base + i * 32, accumulation[i]);
     }
