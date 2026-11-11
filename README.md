@@ -258,6 +258,11 @@ piece uses its promoted type, and castling uses the king's destination. Position
 without a previous move, including immediately after a null move, use ordinary
 history alone. Quiet ordering and LMR use the same sum of ordinary and continuation
 history. Tactical phases are unchanged.
+Tactical pruning reuses the sorter's cached SEE. Shallow quiet-history pruning
+uses the combined history cached when the quiet phase starts. LMR instead reads
+live history only for eligible moves: earlier child searches can change those
+tables after the sorting scores were cached. TT and killer scores are not treated
+as quiet-history scores.
 The fixed-size table uses about 1.5 MiB, allocated once when constructing the engine;
 searching and clearing it perform no allocations. `clear()` resets both histories,
 including the existing UCI clearing after each search.
@@ -277,7 +282,10 @@ searched that deeply; quiet sacrifices and zugzwang remain potential weaknesses.
   This is guarded, not verified, null-move pruning.
 - At shallow Non-PV nodes, late quiet moves are skipped after `3 + depth * depth`
   quiet candidates (through depth five), or when static evaluation plus
-  `100 + 120 * depth` cannot reach alpha (through depth three). Losing tactical
+  `100 + 150 * depth` cannot reach alpha (through depth three). Quiet moves are
+  also skipped through depth three when their cached combined history is below
+  `-2048 * depth`. This history threshold is experimental and enabled by default;
+  node/time savings alone do not establish a playing-strength gain. Losing tactical
   moves with SEE below `-100 * depth` may be skipped through depth four.
   These rules retain at least one searched move and protect evasions, checking
   moves, promotions, killers, advanced pawn pushes, and decisive alpha windows.
@@ -475,6 +483,10 @@ The script alternates execution order on three positions, requires identical
 scores, node counts, PVs, and best moves, and reports throughput using total
 nodes divided by total search time inferred from reported NPS. Processes run
 from `src/` so they use the same network in the repository root.
+For intentional pruning/reduction experiments, add `--allow-search-changes`.
+This reports differences in scores, nodes, PVs and best moves instead of rejecting
+them, and reports total node counts and time as well as NPS. Use strict mode for
+behavior-preserving optimizations; playing-strength testing remains separate.
 
 After pairwise clipped activation, the dense network is
 `1024 -> 32 -> 32 -> 1`, with squared and linear activations, concatenated skip

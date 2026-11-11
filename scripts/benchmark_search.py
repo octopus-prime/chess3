@@ -76,6 +76,8 @@ def main():
     parser.add_argument("candidate", type=pathlib.Path)
     parser.add_argument("--depth", type=int, default=18)
     parser.add_argument("--rounds", type=int, default=8)
+    parser.add_argument("--allow-search-changes", action="store_true",
+                        help="report changed search results instead of requiring exact equivalence")
     args = parser.parse_args()
     if not 1 <= args.depth <= 255 or args.rounds < 1:
         parser.error("depth must be 1..255 and rounds must be positive")
@@ -93,18 +95,30 @@ def main():
                       f"{row['nps']} NPS ({row['nodes']} nodes)", flush=True)
             for key in ("score", "nodes", "pv", "bestmove"):
                 if results[0][key] != results[1][key]:
-                    raise RuntimeError(f"{name}: {key} diverged: {results}")
+                    if not args.allow_search_changes:
+                        raise RuntimeError(f"{name}: {key} diverged: {results}")
+                    print(f"{name}: {key}: {results[0][key]} -> {results[1][key]}", flush=True)
     overall = [[0, 0.0], [0, 0.0]]
     for name, modes in totals.items():
         rates = [nodes / seconds for nodes, seconds in modes]
         print(f"{name}: {rates[0]:.0f} -> {rates[1]:.0f} NPS "
               f"({(rates[1] / rates[0] - 1) * 100:+.2f}%)")
+        if args.allow_search_changes:
+            print(f"  nodes: {modes[0][0]} -> {modes[1][0]} "
+                  f"({(modes[1][0] / modes[0][0] - 1) * 100:+.2f}%); "
+                  f"time: {modes[0][1]:.3f} -> {modes[1][1]:.3f} s "
+                  f"({(modes[1][1] / modes[0][1] - 1) * 100:+.2f}%)")
         for mode in (0, 1):
             overall[mode][0] += modes[mode][0]
             overall[mode][1] += modes[mode][1]
     rates = [nodes / seconds for nodes, seconds in overall]
     print(f"Overall: {rates[0]:.0f} -> {rates[1]:.0f} NPS "
           f"({(rates[1] / rates[0] - 1) * 100:+.2f}%)")
+    if args.allow_search_changes:
+        print(f"Total nodes: {overall[0][0]} -> {overall[1][0]} "
+              f"({(overall[1][0] / overall[0][0] - 1) * 100:+.2f}%)")
+        print(f"Total search time: {overall[0][1]:.3f} -> {overall[1][1]:.3f} s "
+              f"({(overall[1][1] / overall[0][1] - 1) * 100:+.2f}%)")
 
 
 if __name__ == "__main__":

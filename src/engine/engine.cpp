@@ -248,7 +248,6 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
     for (const scored_move_t& sm : ordered) {
         const move_t& move = sm.move;
         const bool is_tactical = _position.tactical(move);
-        const int history_score = _history.score(_position.at(move.from()), move.to(), continuation);
         const bool advanced_pawn = _position.at(move.from()).type() == P &&
             (_position.side() == WHITE ? move.to().rank() >= _6 : move.to().rank() <= _3);
         if (!is_tactical)
@@ -257,11 +256,12 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
             !alpha.decisive() && !advanced_pawn && move != killers[0] && move != killers[1];
         if (prune && !is_tactical && depth <= 5 &&
             (quiet_count > 3 + depth * depth ||
-             (depth <= 3 && static_eval + 100 + 150 * depth <= alpha)) &&
+             (depth <= 3 && (static_eval + 100 + 150 * depth <= alpha ||
+                            sm.score < -2048 * depth))) &&
             !_position.check(move))
             continue;
         if (prune && is_tactical && depth <= 4 && move.promotion() == NO_TYPE &&
-            _position.see(move) < -100 * depth && !_position.check(move))
+            sm.score < -100 * depth && !_position.check(move))
             continue;
         ++move_count;
         if (!is_tactical)
@@ -277,6 +277,7 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
                 move != killers[0] && move != killers[1]) {
                 reduction = int(0.75f + std::log(float(depth)) * std::log(float(move_count)) / 2.25f);
                 reduction += !PV;
+                const int history_score = _history.score(_position.at(move.to()), move.to(), continuation);
                 reduction -= history_score / 8192;
                 reduction = std::clamp(reduction, 1, int{depth} - 2);
             }

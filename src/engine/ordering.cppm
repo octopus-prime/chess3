@@ -84,7 +84,10 @@ struct sorter_t {
                     const auto result = remaining_scored_moves.first(tail.begin() - remaining_scored_moves.begin());
                     count += result.size();
                     for (scored_move_t& sm : result) {
-                        sm.score = score_e(history.score(position.at(sm.move.from()), sm.move.to(), continuation));
+                        sm.score = score_e(std::clamp(
+                            history.score(position.at(sm.move.from()), sm.move.to(), continuation),
+                            int{std::numeric_limits<int16_t>::min()},
+                            int{std::numeric_limits<int16_t>::max()}));
                     }
                     sort_scored_moves(result);
                     return result;

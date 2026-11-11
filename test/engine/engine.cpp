@@ -232,20 +232,15 @@ bool test_move_ordering(const bool with_continuation = false) {
 
     sorter_t sorter{position, moves, best, killers, history,
                     with_continuation ? &continuation : nullptr};
-    auto ordered = [&] {
-        // if constexpr (Scored)
-            return sorter() | std::views::transform([](const scored_move_t& sm) { return sm.move; });
-        // else
-        //     return ordered_moves(position, moves, best, killers, history,
-        //                          with_continuation ? &continuation : nullptr);
-    }();
+    auto ordered = sorter();
     std::array<move_t, 256> actual;
     size_t count{};
     int previous_phase = -1;
     move_t previous_move{};
     size_t previous_killer_rank{};
     size_t phase_counts[5]{};
-    for (const move_t move : ordered) {
+    for (const scored_move_t& sm : ordered) {
+        const move_t move = sm.move;
         const int phase = move == best ? 0 :
             position.tactical(move) && position.see(move) >= 0 ? 1 :
             move == killers[0] || move == killers[1] ? 2 :
@@ -253,6 +248,14 @@ bool test_move_ordering(const bool with_continuation = false) {
         passed &= test_support::check(phase >= previous_phase,
                                       "move ordering follows the five phases");
         ++phase_counts[phase];
+        if (phase == 1 || phase == 4)
+            passed &= test_support::check(sm.score == position.see(move),
+                                          "tactical pruning can reuse the cached SEE");
+        if (phase == 3)
+            passed &= test_support::check(
+                sm.score == history.score(position.at(move.from()), move.to(),
+                                           with_continuation ? &continuation : nullptr),
+                "quiet pruning receives the combined history, not SEE");
 
         passed &= test_support::check(contains(move), "ordered move is legal");
         passed &= test_support::check(
