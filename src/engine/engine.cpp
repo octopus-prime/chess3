@@ -214,7 +214,7 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
 
     const score_t static_eval = in_check ? score_t{DRAW} : evaluate();
     if (!PV && !in_check && depth <= 7 && !beta.decisive() &&
-        static_eval - 120 * depth >= beta)
+        static_eval - 75 * depth >= beta)
         return static_eval;
 
     // Null Move Pruning
@@ -257,7 +257,7 @@ score_t engine_t::search(ply_t depth, ply_t height, score_t alpha, score_t beta)
             !alpha.decisive() && !advanced_pawn && move != killers[0] && move != killers[1];
         if (prune && !is_tactical && depth <= 5 &&
             (quiet_count > 3 + depth * depth ||
-             (depth <= 3 && static_eval + 100 + 120 * depth <= alpha)) &&
+             (depth <= 3 && static_eval + 100 + 150 * depth <= alpha)) &&
             !_position.check(move))
             continue;
         if (prune && is_tactical && depth <= 4 && move.promotion() == NO_TYPE &&
