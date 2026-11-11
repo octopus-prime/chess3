@@ -630,11 +630,11 @@ bool test_selective_search() {
     };
     constexpr std::array cases{
         case_t{"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-               {c2, c4}, 200000},
+               {e2, e4}, 200000},
         case_t{"r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
                {e2, a6}, 400000},
         case_t{"r1b2rk1/2q1b1pp/p2ppn2/1p6/3QP3/1BN1B3/PPP3PP/R4RK1 w - - 0 1",
-               {a2, a4}, 200000},
+               {c3, d5}, 200000},
         case_t{"8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
                {b4, f4}, 40000}
     };

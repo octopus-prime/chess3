@@ -2,6 +2,7 @@
 """Regenerate SFNNv20 fixtures using an independently built Stockfish oracle."""
 
 import argparse
+import os
 import pathlib
 import random
 import re
@@ -67,7 +68,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("stockfish", type=pathlib.Path, help="Stockfish source checkout")
     args = parser.parse_args()
-    network = ROOT / "nn-18cd32e11a9c.nnue"
+    network = ROOT / "nn-68752b755c93.nnue"
     with network.open("rb") as stream:
         _, _, description_size = struct.unpack("<III", stream.read(12))
         stream.seek(description_size, 1)
@@ -91,11 +92,12 @@ def main():
         ["git", "-C", str(checkout), "rev-parse", "--short=8", "HEAD"], text=True
     ).strip()
     with tempfile.TemporaryDirectory(prefix="chess3-stockfish-reference-") as directory:
-        oracle = pathlib.Path(directory) / "reference"
+        oracle = pathlib.Path(directory) / ("reference.exe" if os.name == "nt" else "reference")
         subprocess.run(
-            ["clang++", "-std=c++17", "-O2", "-fconstexpr-steps=500000000", "-DNDEBUG",
+            ["clang++", "-std=c++17", "-O2", "-march=native", "-fconstexpr-steps=500000000", "-DNDEBUG",
              "-DNNUE_EMBEDDING_OFF", "-pthread", "-I" + str(source),
              str(ROOT / "test/nnue/stockfish_reference.cpp"), *map(str, sources),
+             *(["-lshell32"] if os.name == "nt" else []),
              "-o", str(oracle)],
             check=True,
         )
@@ -110,7 +112,7 @@ def main():
         raise RuntimeError("generated positions do not cover every stored stack")
     text = (
         "#pragma once\n\n#include <array>\n#include <cstddef>\n#include <cstdint>\n#include <string_view>\n\n"
-        f"// Generated from Stockfish {revision}, SFNNv20, nn-18cd32e11a9c.nnue.\n"
+        f"// Generated from Stockfish {revision}, SFNNv20, nn-68752b755c93.nnue.\n"
         "// Scores are raw Network::evaluate(), without evaluation post-processing.\n"
         "namespace nnue_reference {\n\nstruct case_t {\n    std::string_view fen;\n"
         "    int score;\n    std::array<uint64_t, 2> feature_hashes;\n"

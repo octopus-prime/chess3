@@ -29,8 +29,8 @@ constexpr size_t SLOTS = 192;
 // At most 32 PSQs, 32 * 31 directed threats, and 16 * 15 / 2 pawn pairs.
 constexpr size_t MAX_ACTIVE = 32 + 32 * 31 + 16 * 15 / 2;
 using feature_buffer_t = std::array<uint32_t, MAX_ACTIVE>;
-constexpr std::string_view NETWORK_NAME = "nn-18cd32e11a9c.nnue";
-constexpr std::string_view NETWORK_PATH = "../nn-18cd32e11a9c.nnue";
+constexpr std::string_view NETWORK_NAME = "nn-68752b755c93.nnue";
+constexpr std::string_view NETWORK_PATH = "../nn-68752b755c93.nnue";
 
 size_t stack_index(const position_t& position) noexcept;
 

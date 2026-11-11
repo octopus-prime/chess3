@@ -403,17 +403,17 @@ Set `BUILD_TESTING=OFF` to omit all four test executables.
 ## NNUE network
 
 The evaluator uses the unmodified Stockfish network
-[`nn-18cd32e11a9c.nnue`](https://github.com/official-stockfish/networks/blob/master/nn-18cd32e11a9c.nnue),
+[`nn-68752b755c93.nnue`](https://github.com/official-stockfish/networks/blob/master/nn-68752b755c93.nnue),
 matching Stockfish's SFNNv20 update. Its SHA-256 is
-`18cd32e11a9cac7c595bc6ebf1301088da8e1f2c7b31efda88dbc74c71f5d2cf`.
+`68752b755c93e419e714829c4aac1bbd66e9509a96cf175be28a00164b6d7f21`.
 The implementation follows Stockfish's GPLv3 NNUE architecture while retaining
 this project's independent incremental search-stack and refresh-cache design.
 
 Before running `chess3` or Engine/NNUE tests, download
-[`nn-18cd32e11a9c.nnue`](https://media.githubusercontent.com/media/official-stockfish/networks/master/nn-18cd32e11a9c.nnue)
+[`nn-68752b755c93.nnue`](https://media.githubusercontent.com/media/official-stockfish/networks/master/nn-68752b755c93.nnue)
 and place it in the repository root, keeping its original filename.
 No extraction, renaming, or conversion is needed. The loader opens
-`../nn-18cd32e11a9c.nnue`, so run these executables from `build/`; CTest uses that directory.
+`../nn-68752b755c93.nnue`, so run these executables from `build/`; CTest uses that directory.
 The media download URL returns the actual network, not its Git LFS pointer.
 It reads the standard little-endian SFNNv20 `.nnue` format directly and checks
 version, architecture/section hashes, stack-table dimensions and fallback
@@ -492,8 +492,10 @@ nonzero four-byte input groups with SIMD masks and visits only those groups;
 zero groups contribute nothing and require no weight loads.
 
 The checked-in reference fixtures in [reference_positions.hpp](test/nnue/reference_positions.hpp)
-were generated from the adjacent Stockfish implementation and this exact network.
+were generated from Stockfish revision `43e01e07` and this exact network.
 Tests require only the downloaded network, not a Stockfish checkout or executable.
+The depth-nine search regression baselines for this network are `e2e4`, `e2a6`,
+`c3d5`, and `b4f4` for the four selective-search positions; node budgets are unchanged.
 To regenerate them against a matching Stockfish checkout:
 
 ```sh
@@ -502,6 +504,8 @@ python3 test/nnue/generate_reference.py ../Stockfish
 
 The generator builds [stockfish_reference.cpp](test/nnue/stockfish_reference.cpp)
 against that checkout in a temporary directory, without modifying Stockfish.
+It targets the host CPU with `-march=native`. On Windows, run from a Visual
+Studio developer shell with Clang and Python on `PATH`.
 It preserves the move-walk fixtures and generates synthetic board configurations
 covering every stored stack, including fallbacks. These routing-only fixtures
 may describe unreachable game states and are not used for move-generation tests.
